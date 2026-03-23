@@ -1,0 +1,90 @@
+
+services:
+    archeshedescriptors:
+      container_name: archeshedescriptors
+      image: he/arches_he_descriptors:dev_build
+      build:
+        args:
+          - "PROJ_NAME=arches_he_descriptors"
+          - "DOCKER_PATH=./arches_he_descriptors/.ac_arches_he_descriptors/docker"
+        context: ../..
+        dockerfile: ./arches_he_descriptors/.ac_arches_he_descriptors/Dockerfile
+      command: run_arches
+      volumes:
+        - ../../arches:/web_root/arches
+        - ../../arches_he_descriptors:/web_root/arches_he_descriptors
+        - ./docker:/web_root/docker
+        - ../../arches_he_descriptors-package:/web_root/arches_he_descriptors_package
+        - ../../arches_he_descriptors-data:/web_root/arches_he_descriptors_data
+      env_file:
+        - ./docker/env_file.env
+      ports:
+        - 8002:8000
+        - 5678:5678
+      stdin_open: true
+      tty: true
+    
+    ## - possible 
+    #archeshedescriptors-bash:
+    #  profiles:
+    #    - livereload
+    #  container_name: archeshedescriptors-bash
+    #  image: he/arches_he_descriptors:dev_build
+    #  command: ["bash"]
+    #  volumes:
+    #    - ../../arches:/web_root/arches
+    #    - ../../arches_he_descriptors:/web_root/arches_he_descriptors
+    #    - ./docker:/web_root/docker
+    #    - ../../arches_he_descriptors-package:/web_root/arches_he_descriptors_package
+    #    - ../../arches_he_descriptors-data:/web_root/arches_he_descriptors_data
+    #  env_file:
+    #    - ./docker/env_file.env
+    #  ports:
+    #    - 35729:35729      
+    #  depends_on:
+    #      - archeshedescriptors
+    #  stdin_open: true
+    #  tty: true
+
+    archeshedescriptors-livereload:
+      profiles:
+        - livereload
+      container_name: archeshedescriptors-livereload
+      image: he/arches_he_descriptors:dev_build
+      command: run_livereload
+      volumes:
+        - ../../arches:/web_root/arches
+        - ../../arches_he_descriptors:/web_root/arches_he_descriptors
+      env_file:
+        - ./docker/env_file.env
+      ports:
+        - 35729:35729      
+      depends_on:
+          - archeshedescriptors
+      stdin_open: true
+      tty: true
+    
+    archeshedescriptors-webpack:
+      container_name: archeshedescriptors-webpack
+      image: he/arches_he_descriptors:dev_build
+      command: run_webpack
+      volumes:
+        - ../../arches:/web_root/arches
+        - ../../arches_he_descriptors:/web_root/arches_he_descriptors
+      env_file:
+        - ./docker/env_file.env
+      ports:
+        - 8028:8021
+      depends_on:
+          - archeshedescriptors
+      stdin_open: true
+      tty: true
+
+networks:
+  default:
+    external: true
+    name: archeshedescriptors-network
+
+volumes:
+    arches-log:
+    arches-static:
