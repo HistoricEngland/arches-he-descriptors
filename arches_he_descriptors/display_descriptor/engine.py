@@ -491,7 +491,19 @@ def _match_filter_value_simple(
     return value in allowed
 
 
-def select_field_value(rule: RuleDefinition, resource: Dict[str, Any]) -> Any:
+def _find_parent_field_for_subfield(
+    field_defs: List[FieldDefinition], subfield_name: str
+) -> Optional[str]:
+    """Find the parent field that contains the given subfield."""
+    for field_def in field_defs:
+        if subfield_name in field_def.subfields:
+            return field_def.name
+    return None
+
+
+def select_field_value(
+    rule: RuleDefinition, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
+) -> Any:
     """
     Resolve the value for a rule's field from the resource, applying filters and priority semantics.
 
@@ -500,8 +512,41 @@ def select_field_value(rule: RuleDefinition, resource: Dict[str, Any]) -> Any:
           {"value": "old church", "Monument Name Use Type": "Primary"},
           ...
       ]
+
+    Also supports subfield rules: if the rule name is a subfield of a parent field,
+    this function will extract it from the parent field's value.
     """
 
+    # Check if this rule references a subfield
+    parent_field = None
+    if field_defs:
+        parent_field = _find_parent_field_for_subfield(field_defs, rule.name)
+
+    if parent_field:
+        # Get the parent field value
+        raw_value = resource.get(parent_field)
+        if raw_value is None:
+            return None
+
+        # Extract the subfield from the parent field's value(s)
+        if isinstance(raw_value, list) and all(isinstance(x, dict) for x in raw_value):
+            # Parent field is a list of dict entries; extract subfield from each
+            subfield_values = []
+            for entry in raw_value:
+                if rule.name in entry:
+                    subfield_values.append(entry[rule.name])
+
+            if not subfield_values:
+                return None
+            if len(subfield_values) == 1:
+                return subfield_values[0]
+            return subfield_values
+        elif isinstance(raw_value, dict):
+            # Single dict entry
+            return raw_value.get(rule.name)
+        return None
+
+    # Original logic for non-subfield rules
     raw_value = resource.get(rule.name)
 
     if raw_value is None:
@@ -549,7 +594,7 @@ def select_field_value(rule: RuleDefinition, resource: Dict[str, Any]) -> Any:
 
 
 def execute_rule_definition(
-    rule: RuleDefinition, resource: Dict[str, Any]
+    rule: RuleDefinition, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
 ) -> Tuple[Optional[Any], bool]:
     """
     Returns:
@@ -560,7 +605,7 @@ def execute_rule_definition(
     inner "value" string and the full dict is returned so that callers can
     spread the subfield entries into the format context.
     """
-    value = select_field_value(rule, resource)
+    value = select_field_value(rule, resource, field_defs)
     used_default = False
 
     if value is None:
@@ -579,7 +624,7 @@ def execute_rule_definition(
 
 
 def execute_rule_block(
-    block: DisplayDescriptorRuleBlock, resource: Dict[str, Any]
+    block: DisplayDescriptorRuleBlock, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
 ) -> Optional[str]:
     """
     Try to execute a single rule block.
@@ -588,7 +633,21 @@ def execute_rule_block(
     context: Dict[str, Any] = {}
 
     for rule in block.rule:
-        value, used_default = execute_rule_definition(rule, resource)
+        # Check if this rule references a subfield that was already populated from a parent field
+        is_subfield = field_defs and any(
+            rule.name in field_def.subfields for field_def in field_defs
+        )
+
+        if is_subfield and rule.name in context:
+            # Use the subfield value that's already in context from the parent field rule
+            # and apply this rule's operations to it
+            value = context[rule.name]
+            value = apply_operation_chain(value, rule.operations)
+            used_default = False
+        else:
+            # Extract from resource normally (operations applied by execute_rule_definition)
+            value, used_default = execute_rule_definition(
+                rule, resource, field_defs)
 
         # When the value is a subfield dict, spread its extra keys into the
         # context so they are referenceable in the format string (e.g.
@@ -630,7 +689,7 @@ class DisplayDescriptorEngine:
         Try each rule block in order; return the first successful formatted string.
         """
         for block in self.config.display_descriptor_rules:
-            result = execute_rule_block(block, resource)
+            result = execute_rule_block(block, resource, self.config.fields)
             if result is not None:
                 return result
         return None
