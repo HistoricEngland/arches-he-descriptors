@@ -1,0 +1,113 @@
+{% extends "admin/change_form.html" %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+
+  <fieldset class="module aligned wide">
+    <h2>Test Display Descriptor</h2>
+    <div class="form-row">
+      <div>
+        <label for="test_resource_id">Resource UUID:</label>
+        <input type="text" id="test_resource_id" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000" style="width: 50%;" />
+      </div>
+    </div>
+    <div class="form-row" style="margin-top: 8px;">
+      <button type="button" id="test_check_btn" class="button">Check</button>
+    </div>
+    <div id="test_output" style="margin-top: 12px; padding: 12px; background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; display: none; white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;"></div>
+  </fieldset>
+
+  <script>
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        return parts.pop().split(';').shift();
+      }
+      return null;
+    }
+
+    document.getElementById('test_check_btn').addEventListener('click', function() {
+      const resourceId = document.getElementById('test_resource_id').value.trim();
+      const outputDiv = document.getElementById('test_output');
+      
+      if (!resourceId) {
+        outputDiv.textContent = 'Error: Please enter a Resource UUID';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      // Get graph_id from the form (ChoiceField renders as <select>)
+      const graphIdInput = document.querySelector('select[name="graph_id"]');
+      if (!graphIdInput) {
+        outputDiv.textContent = 'Error: graph_id select not found in form';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      const graphId = graphIdInput.value.trim();
+      if (!graphId) {
+        outputDiv.textContent = 'Error: Please select a graph';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      // Get current YAML config from the textarea (allow unsaved changes)
+      const yamlConfigTextarea = document.querySelector('textarea[name="yaml_config"]');
+      if (!yamlConfigTextarea) {
+        outputDiv.textContent = 'Error: yaml_config textarea not found in form';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      const yamlConfig = yamlConfigTextarea.value.trim();
+      if (!yamlConfig) {
+        outputDiv.textContent = 'Error: YAML config is empty';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      outputDiv.textContent = 'Testing...';
+      outputDiv.style.display = 'block';
+      outputDiv.style.color = '#333';
+
+      fetch('{% url "test_config_for_resource" %}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
+        },
+        body: JSON.stringify({
+          resource_id: resourceId,
+          graph_id: graphId,
+          yaml_config: yamlConfig,
+        }),
+      })
+        .then(response => response.json())
+        .then(data => {
+          outputDiv.style.display = 'block';
+          if (data.error) {
+            outputDiv.style.color = '#d32f2f';
+            outputDiv.textContent = 'Error: ' + data.error;
+          } else if (data.display_descriptor) {
+            outputDiv.style.color = '#1b5e20';
+            outputDiv.textContent = data.display_descriptor;
+          } else {
+            outputDiv.style.color = '#f57f17';
+            outputDiv.textContent = 'No display descriptor generated (may be expected if config is set to no-op)';
+          }
+        })
+        .catch(error => {
+          outputDiv.style.display = 'block';
+          outputDiv.style.color = '#d32f2f';
+          outputDiv.textContent = 'Network error: ' + error.message;
+        });
+    });
+  </script>
+{% endblock %}
