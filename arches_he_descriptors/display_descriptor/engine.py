@@ -41,12 +41,19 @@ class OperationType(str, Enum):
     COMBINE = "combine"
 
 
-def op_titlecase(value: Any) -> Any:
+def _is_acronym_token(token: str) -> bool:
+    letters = [ch for ch in token if ch.isalpha()]
+    return len(letters) >= 2 and all(ch.isupper() for ch in letters)
+
+
+def op_titlecase(value: Any, preserve_acronyms: bool = False) -> Any:
     if isinstance(value, str):
         # Proper title case that handles apostrophes correctly-ish:
         # Capitalize the first alphabetical character of each word and
         # lowercase the remainder.
         def _cap_word(w: str) -> str:
+            if preserve_acronyms and _is_acronym_token(w):
+                return w
             for i, ch in enumerate(w):
                 if ch.isalpha():
                     return w[:i] + ch.upper() + w[i + 1:].lower()
@@ -54,7 +61,7 @@ def op_titlecase(value: Any) -> Any:
 
         return " ".join(_cap_word(word) for word in value.split())
     if isinstance(value, list):
-        return [op_titlecase(v) for v in value]
+        return [op_titlecase(v, preserve_acronyms=preserve_acronyms) for v in value]
     return value
 
 
@@ -244,13 +251,30 @@ def op_truncate(value: Any, max_length: int, truncate_indicator: str = "...") ->
     return value
 
 
-def op_capitalize(value: Any) -> Any:
+def op_capitalize(value: Any, preserve_acronyms: bool = False) -> Any:
     if isinstance(value, str):
         if len(value) == 0:
             return value
-        return value[0].upper() + value[1:].lower()
+        if not preserve_acronyms:
+            return value[0].upper() + value[1:].lower()
+
+        words = value.split()
+        if not words:
+            return value
+
+        def _cap_word(w: str) -> str:
+            for i, ch in enumerate(w):
+                if ch.isalpha():
+                    return w[:i] + ch.upper() + w[i + 1:].lower()
+            return w
+
+        first_word = words[0] if _is_acronym_token(
+            words[0]) else _cap_word(words[0])
+        remaining_words = [w if _is_acronym_token(
+            w) else w.lower() for w in words[1:]]
+        return " ".join([first_word] + remaining_words)
     if isinstance(value, list):
-        return [op_capitalize(v) for v in value]
+        return [op_capitalize(v, preserve_acronyms=preserve_acronyms) for v in value]
     return value
 
 
@@ -419,10 +443,16 @@ def _handle_coalesce(value: Any, op: Operation) -> Any:
 
 # Dispatch dictionary mapping operation types to their handlers
 OPERATION_HANDLERS = {
-    OperationType.TITLECASE.value: lambda v, op: op_titlecase(v),
+    OperationType.TITLECASE.value: lambda v, op: op_titlecase(
+        v,
+        preserve_acronyms=op.preserve_acronyms if op.preserve_acronyms is not None else False,
+    ),
     OperationType.UPPERCASE.value: lambda v, op: op_uppercase(v),
     OperationType.LOWERCASE.value: lambda v, op: op_lowercase(v),
-    OperationType.CAPITALIZE.value: lambda v, op: op_capitalize(v),
+    OperationType.CAPITALIZE.value: lambda v, op: op_capitalize(
+        v,
+        preserve_acronyms=op.preserve_acronyms if op.preserve_acronyms is not None else False,
+    ),
     OperationType.TRIM.value: lambda v, op: op_trim(v),
     OperationType.LTRIM.value: lambda v, op: op_ltrim(v),
     OperationType.RTRIM.value: lambda v, op: op_rtrim(v),
