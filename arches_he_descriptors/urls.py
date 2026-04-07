@@ -3,16 +3,28 @@ from django.conf.urls.static import static
 from django.conf.urls.i18n import i18n_patterns
 from django.urls import include, path
 from arches_he_descriptors.display_descriptor.views import (
+    get_display_descriptor,
     get_display_descriptor_graph_config,
+    preview_display_descriptor,
     test_config_for_resource,
 )
 
 urlpatterns = [
     # project-level urls
     path(
+        "api/display-descriptor/<uuid:resource_id>/",
+        get_display_descriptor,
+        name="get_display_descriptor",
+    ),
+    path(
         "api/display-descriptor/config/<uuid:graph_id>/",
         get_display_descriptor_graph_config,
         name="get_display_descriptor_graph_config",
+    ),
+    path(
+        "api/display-descriptor/preview/",
+        preview_display_descriptor,
+        name="preview_display_descriptor",
     ),
     path(
         "api/display-descriptor/admin-test/",
