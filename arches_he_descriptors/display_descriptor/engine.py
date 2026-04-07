@@ -1,6 +1,7 @@
 # from dataclasses import dataclass, field
 import re
 import unicodedata
+from numbers import Number
 from enum import Enum
 from typing import List, Optional, Dict, Any, Tuple
 from .schema import (
@@ -104,6 +105,10 @@ def _normalize_pad_char(pad_char: Optional[str]) -> str:
 
 
 def op_lpad(value: Any, pad_length: int, pad_char: str = " ") -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Number):
+        value = str(value)
     if isinstance(value, str):
         if len(value) >= pad_length:
             return value
@@ -114,6 +119,10 @@ def op_lpad(value: Any, pad_length: int, pad_char: str = " ") -> Any:
 
 
 def op_rpad(value: Any, pad_length: int, pad_char: str = " ") -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Number):
+        value = str(value)
     if isinstance(value, str):
         if len(value) >= pad_length:
             return value
