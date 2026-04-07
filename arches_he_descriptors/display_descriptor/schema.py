@@ -32,6 +32,8 @@ class Operation:
     # For coalesce operation
     coalesce_value: Optional[str] = None
     fallback_text: Optional[str] = None
+    # For titlecase/capitalize operations
+    preserve_acronyms: Optional[bool] = None
 
 
 @dataclass
