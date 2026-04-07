@@ -270,10 +270,10 @@ class DisplayDescriptorService:
 
                         result.setdefault(field.name, []).append(parent_val)
 
-            if strict_sortorder and has_null_sortorder and has_non_null_sortorder:
+            if strict_sortorder and has_null_sortorder:
                 raise ValueError(
-                    "Inconsistent sortorder values found for nodegroup "
-                    f"{nodegroup_id}: some rows are null and some are populated."
+                    "sortorder validation failed for nodegroup "
+                    f"{nodegroup_id}: all tiles must have sortorder set when strict_sortorder=true."
                 )
 
         concept_label_map = self._get_concept_label_map(concept_ids)
