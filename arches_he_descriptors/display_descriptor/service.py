@@ -231,6 +231,7 @@ class DisplayDescriptorService:
                         node_id=parent_meta["nodeid"],
                         datatype=parent_meta["datatype"],
                         language=language,
+                        strict_sortorder=strict_sortorder,
                     )
 
                     if field.subfields:
@@ -245,6 +246,7 @@ class DisplayDescriptorService:
                                 node_id=sub_meta["nodeid"],
                                 datatype=sub_meta["datatype"],
                                 language=language,
+                                strict_sortorder=strict_sortorder,
                             )
                             entry[subfield_name] = sub_val
 
@@ -391,7 +393,12 @@ class DisplayDescriptorService:
         return resource["graph_id"]
 
     def _extract_value(
-        self, tile_data: Dict[str, Any], node_id, datatype: str, language: str
+        self,
+        tile_data: Dict[str, Any],
+        node_id,
+        datatype: str,
+        language: str,
+        strict_sortorder: bool = False,
     ) -> Any:
         """Extract a node value from tiledata according to datatype."""
         raw = tile_data.get(str(node_id))
@@ -419,7 +426,102 @@ class DisplayDescriptorService:
                 return raw.strip() or None
             return str(raw)
 
+        if datatype in {"resource-instance", "resource-instance-list"}:
+            related_resource_ids = self._extract_related_resource_ids(raw)
+            if not related_resource_ids:
+                return None
+
+            descriptors = []
+            for related_resource_id in related_resource_ids:
+                descriptor = self._get_related_resource_descriptor(
+                    resource_id=related_resource_id,
+                    language=language,
+                )
+                if descriptor:
+                    descriptors.append(descriptor)
+
+            if not descriptors:
+                return None
+
+            if datatype == "resource-instance" and len(descriptors) == 1:
+                return descriptors[0]
+
+            return descriptors
+
         return raw
+
+    def _extract_related_resource_ids(self, raw: Any) -> List[str]:
+        """Normalize resource-instance tile payloads into related resource IDs."""
+        entries = raw if isinstance(raw, list) else [raw]
+        resource_ids: List[str] = []
+
+        for entry in entries:
+            if isinstance(entry, dict):
+                resource_id = entry.get("resourceId")
+            else:
+                resource_id = entry
+
+            if resource_id is None:
+                continue
+
+            resource_id_str = str(resource_id).strip()
+            if resource_id_str:
+                resource_ids.append(resource_id_str)
+
+        return list(dict.fromkeys(resource_ids))
+
+    def _get_related_resource_descriptor(
+        self,
+        resource_id: str,
+        language: str,
+    ) -> Optional[str]:
+        """Resolve a related resource ID to its stored descriptor string."""
+        resource_id = str(resource_id).strip()
+        if resource_id == "":
+            return None
+
+        descriptor = self._get_stored_resource_descriptor(resource_id, language)
+        if descriptor is not None:
+            descriptor = str(descriptor).strip() or None
+
+        return descriptor or resource_id
+
+    def _get_stored_resource_descriptor(
+        self, resource_id: str, language: str, descriptor_type: str = "name"
+    ) -> Optional[str]:
+        """Read the stored Arches descriptor from ResourceInstance.descriptors."""
+        from arches.app.models.models import ResourceInstance
+
+        row = (
+            ResourceInstance.objects.filter(resourceinstanceid=resource_id)
+            .values("descriptors")
+            .first()
+        )
+        if not row:
+            return None
+
+        descriptors = row.get("descriptors") or {}
+        if not isinstance(descriptors, dict):
+            return None
+
+        localized = descriptors.get(language)
+        if isinstance(localized, dict):
+            value = localized.get(descriptor_type)
+            if value is not None:
+                return str(value)
+
+        if language != "en":
+            default_localized = descriptors.get("en")
+            if isinstance(default_localized, dict):
+                value = default_localized.get(descriptor_type)
+                if value is not None:
+                    return str(value)
+
+        fallback_value = descriptors.get(descriptor_type)
+        if fallback_value is not None:
+            return str(fallback_value)
+
+        return None
 
     def _get_concept_label_map(self, concept_ids) -> Dict[str, str]:
         """Resolve concept UUID strings to labels in a single query."""
