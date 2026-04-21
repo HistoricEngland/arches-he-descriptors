@@ -27,8 +27,7 @@ class DisplayDescriptorService:
             raise ValueError(f"Invalid YAML: {e}")
 
         if not isinstance(data, dict):
-            raise ValueError(
-                "Display descriptor YAML must deserialize to an object")
+            raise ValueError("Display descriptor YAML must deserialize to an object")
 
         return self._parse_config_data(data)
 
@@ -182,19 +181,16 @@ class DisplayDescriptorService:
         Validates that all configured fields exist in the resource graph and that all
         configured subfields share nodegroup with their parent field.
         """
-        config = self._resolve_config(
-            resource_id=resource_id, config_data=config_data)
+        config = self._resolve_config(resource_id=resource_id, config_data=config_data)
         if config is None:
             return ({}, None) if return_config else {}
 
         self._config_cache = config
-        node_map = self._resolve_nodes_for_configured_fields(
-            resource_id, config=config)
+        node_map = self._resolve_nodes_for_configured_fields(resource_id, config=config)
 
         grouped_fields: Dict[str, List[FieldDefinition]] = defaultdict(list)
         for field in config.fields:
-            grouped_fields[str(node_map[field.name]
-                               ["nodegroup_id"])].append(field)
+            grouped_fields[str(node_map[field.name]["nodegroup_id"])].append(field)
 
         from arches.app.models.models import TileModel
 
@@ -250,16 +246,30 @@ class DisplayDescriptorService:
                             )
                             entry[subfield_name] = sub_val
 
-                            if sub_meta["datatype"] == "concept" and sub_val:
-                                concept_ids.add(sub_val)
+                            if sub_meta["datatype"] in {"concept", "concept-list"}:
+                                self._collect_concept_ids(
+                                    sub_meta["datatype"], sub_val, concept_ids
+                                )
                                 concept_placeholders.append(
-                                    (entry, subfield_name, sub_val)
+                                    (
+                                        entry,
+                                        subfield_name,
+                                        sub_meta["datatype"],
+                                        sub_val,
+                                    )
                                 )
 
-                        if parent_meta["datatype"] == "concept" and entry.get("value"):
-                            concept_ids.add(entry["value"])
+                        if parent_meta["datatype"] in {"concept", "concept-list"}:
+                            self._collect_concept_ids(
+                                parent_meta["datatype"], entry.get("value"), concept_ids
+                            )
                             concept_placeholders.append(
-                                (entry, "value", entry["value"])
+                                (
+                                    entry,
+                                    "value",
+                                    parent_meta["datatype"],
+                                    entry.get("value"),
+                                )
                             )
 
                         result.setdefault(field.name, []).append(entry)
@@ -267,8 +277,10 @@ class DisplayDescriptorService:
                         if parent_val is None:
                             continue
 
-                        if parent_meta["datatype"] == "concept":
-                            concept_ids.add(parent_val)
+                        if parent_meta["datatype"] in {"concept", "concept-list"}:
+                            self._collect_concept_ids(
+                                parent_meta["datatype"], parent_val, concept_ids
+                            )
 
                         result.setdefault(field.name, []).append(parent_val)
 
@@ -286,11 +298,29 @@ class DisplayDescriptorService:
                 result[field_name] = [
                     concept_label_map.get(v) for v in values if v in concept_label_map
                 ]
+            elif parent_meta["datatype"] == "concept-list":
+                resolved_values = []
+                for value in values:
+                    resolved_values.extend(
+                        self._resolve_concept_value(
+                            datatype="concept-list",
+                            value=value,
+                            concept_label_map=concept_label_map,
+                        )
+                    )
+                result[field_name] = resolved_values
 
-        for entry, key, concept_id in concept_placeholders:
-            entry[key] = concept_label_map.get(concept_id, concept_id)
+        for entry, key, datatype, concept_value in concept_placeholders:
+            entry[key] = self._resolve_concept_value(
+                datatype=datatype,
+                value=concept_value,
+                concept_label_map=concept_label_map,
+            )
 
         for field_name, values in list(result.items()):
+            parent_meta = node_map[field_name]
+            if parent_meta["datatype"] == "concept-list":
+                continue
             if isinstance(values, list) and all(
                 not isinstance(v, dict) for v in values
             ):
@@ -363,8 +393,7 @@ class DisplayDescriptorService:
             for subfield in field.subfields:
                 child = node_map[subfield]
                 child_nodegroup = (
-                    str(child["nodegroup_id"]
-                        ) if child["nodegroup_id"] else None
+                    str(child["nodegroup_id"]) if child["nodegroup_id"] else None
                 )
                 if parent_nodegroup != child_nodegroup:
                     nodegroup_errors.append(
@@ -373,8 +402,7 @@ class DisplayDescriptorService:
 
         if nodegroup_errors:
             raise ValueError(
-                "Subfield nodegroup validation failed: " +
-                "; ".join(nodegroup_errors)
+                "Subfield nodegroup validation failed: " + "; ".join(nodegroup_errors)
             )
 
         return node_map
@@ -426,6 +454,10 @@ class DisplayDescriptorService:
                 return raw.strip() or None
             return str(raw)
 
+        if datatype == "concept-list":
+            concept_values = self._normalize_concept_values(raw)
+            return concept_values or None
+
         if datatype in {"resource-instance", "resource-instance-list"}:
             related_resource_ids = self._extract_related_resource_ids(raw)
             if not related_resource_ids:
@@ -469,6 +501,49 @@ class DisplayDescriptorService:
                 resource_ids.append(resource_id_str)
 
         return list(dict.fromkeys(resource_ids))
+
+    def _normalize_concept_values(self, raw: Any) -> List[str]:
+        """Normalize concept payloads into a list of concept IDs."""
+        entries = raw if isinstance(raw, list) else [raw]
+        concept_values: List[str] = []
+
+        for entry in entries:
+            if entry is None:
+                continue
+
+            concept_value = str(entry).strip()
+            if concept_value:
+                concept_values.append(concept_value)
+
+        return list(dict.fromkeys(concept_values))
+
+    def _collect_concept_ids(self, datatype: str, value: Any, concept_ids) -> None:
+        """Accumulate concept IDs for later bulk label resolution."""
+        if datatype == "concept":
+            if value:
+                concept_ids.add(value)
+            return
+
+        if datatype == "concept-list":
+            concept_ids.update(self._normalize_concept_values(value))
+
+    def _resolve_concept_value(
+        self,
+        datatype: str,
+        value: Any,
+        concept_label_map: Dict[str, str],
+    ) -> Any:
+        """Resolve concept UUID placeholders to their labels."""
+        if datatype == "concept":
+            return concept_label_map.get(value, value)
+
+        if datatype == "concept-list":
+            return [
+                concept_label_map.get(concept_value, concept_value)
+                for concept_value in self._normalize_concept_values(value)
+            ]
+
+        return value
 
     def _get_related_resource_descriptor(
         self,

@@ -34,6 +34,7 @@ class OperationType(str, Enum):
     UNIQUE = "unique"
     SORT = "sort"
     REVERSE = "reverse"
+    FIRST = "first"
     ABBREVIATE = "abbreviate"
     PREFIX = "prefix"
     SUFFIX = "suffix"
@@ -56,7 +57,7 @@ def op_titlecase(value: Any, preserve_acronyms: bool = False) -> Any:
                 return w
             for i, ch in enumerate(w):
                 if ch.isalpha():
-                    return w[:i] + ch.upper() + w[i + 1:].lower()
+                    return w[:i] + ch.upper() + w[i + 1 :].lower()
             return w
 
         return " ".join(_cap_word(word) for word in value.split())
@@ -207,8 +208,7 @@ def op_unique(value: Any) -> Any:
         result = []
         for item in value:
             # Handle dicts with 'value' key for uniqueness check
-            check_val = item.get("value", item) if isinstance(
-                item, dict) else item
+            check_val = item.get("value", item) if isinstance(item, dict) else item
             # Convert to string for comparison to handle various types
             check_key = str(check_val)
             if check_key not in seen:
@@ -233,6 +233,12 @@ def op_sort(value: Any) -> Any:
 def op_reverse(value: Any) -> Any:
     if isinstance(value, list):
         return list(reversed(value))
+    return value
+
+
+def op_first(value: Any) -> Any:
+    if isinstance(value, list):
+        return value[0] if value else None
     return value
 
 
@@ -265,13 +271,11 @@ def op_capitalize(value: Any, preserve_acronyms: bool = False) -> Any:
         def _cap_word(w: str) -> str:
             for i, ch in enumerate(w):
                 if ch.isalpha():
-                    return w[:i] + ch.upper() + w[i + 1:].lower()
+                    return w[:i] + ch.upper() + w[i + 1 :].lower()
             return w
 
-        first_word = words[0] if _is_acronym_token(
-            words[0]) else _cap_word(words[0])
-        remaining_words = [w if _is_acronym_token(
-            w) else w.lower() for w in words[1:]]
+        first_word = words[0] if _is_acronym_token(words[0]) else _cap_word(words[0])
+        remaining_words = [w if _is_acronym_token(w) else w.lower() for w in words[1:]]
         return " ".join([first_word] + remaining_words)
     if isinstance(value, list):
         return [op_capitalize(v, preserve_acronyms=preserve_acronyms) for v in value]
@@ -445,13 +449,17 @@ def _handle_coalesce(value: Any, op: Operation) -> Any:
 OPERATION_HANDLERS = {
     OperationType.TITLECASE.value: lambda v, op: op_titlecase(
         v,
-        preserve_acronyms=op.preserve_acronyms if op.preserve_acronyms is not None else False,
+        preserve_acronyms=(
+            op.preserve_acronyms if op.preserve_acronyms is not None else False
+        ),
     ),
     OperationType.UPPERCASE.value: lambda v, op: op_uppercase(v),
     OperationType.LOWERCASE.value: lambda v, op: op_lowercase(v),
     OperationType.CAPITALIZE.value: lambda v, op: op_capitalize(
         v,
-        preserve_acronyms=op.preserve_acronyms if op.preserve_acronyms is not None else False,
+        preserve_acronyms=(
+            op.preserve_acronyms if op.preserve_acronyms is not None else False
+        ),
     ),
     OperationType.TRIM.value: lambda v, op: op_trim(v),
     OperationType.LTRIM.value: lambda v, op: op_ltrim(v),
@@ -467,6 +475,7 @@ OPERATION_HANDLERS = {
     OperationType.UNIQUE.value: lambda v, op: op_unique(v),
     OperationType.SORT.value: lambda v, op: op_sort(v),
     OperationType.REVERSE.value: lambda v, op: op_reverse(v),
+    OperationType.FIRST.value: lambda v, op: op_first(v),
     OperationType.ABBREVIATE.value: _handle_abbreviate,
     OperationType.PREFIX.value: _handle_prefix,
     OperationType.SUFFIX.value: _handle_suffix,
@@ -541,7 +550,9 @@ def _find_parent_field_for_subfield(
 
 
 def select_field_value(
-    rule: RuleDefinition, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
+    rule: RuleDefinition,
+    resource: Dict[str, Any],
+    field_defs: Optional[List[FieldDefinition]] = None,
 ) -> Any:
     """
     Resolve the value for a rule's field from the resource, applying filters and priority semantics.
@@ -633,7 +644,9 @@ def select_field_value(
 
 
 def execute_rule_definition(
-    rule: RuleDefinition, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
+    rule: RuleDefinition,
+    resource: Dict[str, Any],
+    field_defs: Optional[List[FieldDefinition]] = None,
 ) -> Tuple[Optional[Any], bool]:
     """
     Returns:
@@ -663,7 +676,9 @@ def execute_rule_definition(
 
 
 def execute_rule_block(
-    block: DisplayDescriptorRuleBlock, resource: Dict[str, Any], field_defs: Optional[List[FieldDefinition]] = None
+    block: DisplayDescriptorRuleBlock,
+    resource: Dict[str, Any],
+    field_defs: Optional[List[FieldDefinition]] = None,
 ) -> Optional[str]:
     """
     Try to execute a single rule block.
@@ -685,8 +700,7 @@ def execute_rule_block(
             used_default = False
         else:
             # Extract from resource normally (operations applied by execute_rule_definition)
-            value, used_default = execute_rule_definition(
-                rule, resource, field_defs)
+            value, used_default = execute_rule_definition(rule, resource, field_defs)
 
         # When the value is a subfield dict, spread its extra keys into the
         # context so they are referenceable in the format string (e.g.
