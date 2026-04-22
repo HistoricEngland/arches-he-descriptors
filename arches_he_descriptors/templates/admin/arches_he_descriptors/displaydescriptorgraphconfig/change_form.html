@@ -7,8 +7,8 @@
     <h2>Test Display Descriptor</h2>
     <div class="form-row">
       <div>
-        <label for="test_resource_id">Resource UUID:</label>
-        <input type="text" id="test_resource_id" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000" style="width: 50%;" />
+        <label for="test_resource_id">Resource UUID(s):</label>
+        <input type="text" id="test_resource_id" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000, 123e4567-e89b-12d3-a456-426614174000" style="width: 50%;" />
       </div>
     </div>
     <div class="form-row" style="margin-top: 8px;">
@@ -27,12 +27,66 @@
       return null;
     }
 
+    function parseResourceIds(rawValue) {
+      return Array.from(new Set(
+        rawValue
+          .split(',')
+          .map(value => value.trim())
+          .filter(Boolean)
+      ));
+    }
+
+    function getResultColor(data, networkError) {
+      if (networkError || (data && data.error)) {
+        return '#d32f2f';
+      }
+
+      if (data && data.display_descriptor) {
+        return '#1b5e20';
+      }
+
+      return '#f57f17';
+    }
+
+    function formatResultBlock(resourceId, data, networkError) {
+      if (networkError) {
+        return [
+          `Resource ${resourceId}`,
+          `Status: Network error`,
+          `Message: ${networkError}`,
+        ].join('\n');
+      }
+
+      if (data && data.error) {
+        return [
+          `Resource ${resourceId}`,
+          `Status: Error`,
+          `Message: ${data.error}`,
+        ].join('\n');
+      }
+
+      if (data && data.display_descriptor) {
+        return [
+          `Resource ${resourceId}`,
+          `Status: OK`,
+          `Descriptor: ${data.display_descriptor}`,
+        ].join('\n');
+      }
+
+      return [
+        `Resource ${resourceId}`,
+        `Status: No descriptor`,
+        'Message: No display descriptor generated (may be expected if config is set to no-op)',
+      ].join('\n');
+    }
+
     document.getElementById('test_check_btn').addEventListener('click', function() {
-      const resourceId = document.getElementById('test_resource_id').value.trim();
+      const resourceIdInput = document.getElementById('test_resource_id').value.trim();
       const outputDiv = document.getElementById('test_output');
-      
-      if (!resourceId) {
-        outputDiv.textContent = 'Error: Please enter a Resource UUID';
+
+      const resourceIds = parseResourceIds(resourceIdInput);
+      if (!resourceIds.length) {
+        outputDiv.textContent = 'Error: Please enter at least one Resource UUID';
         outputDiv.style.display = 'block';
         outputDiv.style.color = '#d32f2f';
         return;
@@ -76,37 +130,51 @@
       outputDiv.style.display = 'block';
       outputDiv.style.color = '#333';
 
-      fetch('{% url "test_config_for_resource" %}', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCookie('csrftoken') || '',
-        },
-        body: JSON.stringify({
-          resource_id: resourceId,
-          graph_id: graphId,
-          yaml_config: yamlConfig,
-        }),
-      })
-        .then(response => response.json())
-        .then(data => {
+      const requests = resourceIds.map(resourceId => {
+        return fetch('{% url "test_config_for_resource" %}', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken') || '',
+          },
+          body: JSON.stringify({
+            resource_id: resourceId,
+            graph_id: graphId,
+            yaml_config: yamlConfig,
+          }),
+        })
+          .then(response => response.json())
+          .then(data => ({ resourceId, data, networkError: null }))
+          .catch(error => ({ resourceId, data: null, networkError: error.message }));
+      });
+
+      Promise.all(requests)
+        .then(results => {
           outputDiv.style.display = 'block';
-          if (data.error) {
-            outputDiv.style.color = '#d32f2f';
-            outputDiv.textContent = 'Error: ' + data.error;
-          } else if (data.display_descriptor) {
-            outputDiv.style.color = '#1b5e20';
-            outputDiv.textContent = data.display_descriptor;
-          } else {
-            outputDiv.style.color = '#f57f17';
-            outputDiv.textContent = 'No display descriptor generated (may be expected if config is set to no-op)';
-          }
+          outputDiv.style.color = '#333';
+          outputDiv.innerHTML = '';
+
+          results.forEach((result, index) => {
+            const block = document.createElement('div');
+            block.style.color = getResultColor(result.data, result.networkError);
+            block.style.marginBottom = index < results.length - 1 ? '12px' : '0';
+            block.textContent = formatResultBlock(result.resourceId, result.data, result.networkError);
+            outputDiv.appendChild(block);
+
+            if (index < results.length - 1) {
+              const separator = document.createElement('div');
+              separator.style.color = '#666';
+              separator.style.marginBottom = '12px';
+              separator.textContent = '----------------------------------------';
+              outputDiv.appendChild(separator);
+            }
+          });
         })
         .catch(error => {
           outputDiv.style.display = 'block';
           outputDiv.style.color = '#d32f2f';
-          outputDiv.textContent = 'Network error: ' + error.message;
+          outputDiv.textContent = 'Unexpected error: ' + error.message;
         });
     });
   </script>
