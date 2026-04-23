@@ -36,7 +36,7 @@ RUN pip install -e '.[dev]'
 
 ## /mariner/arches_he_descriptors/pyproject.toml
 
-Update the `dependencies` to:
+Update the `dependencies` from:
 
 ``` toml
 dependencies = [
