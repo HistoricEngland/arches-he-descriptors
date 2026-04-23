@@ -1,5 +1,7 @@
 # Implementing Arches HE Descriptor into an Existing Arches Application
 
+Documents the additional steps required to integrate the descriptor application into Mariner.
+
 ## .arches_containers/mariner-proj/docker-compose.yml
 
 Added:
@@ -92,7 +94,7 @@ INSTALLED_APPS = (
 ARCHES_APPLICATIONS = ("mariner_app", "arches_he_sysref_funcs", "arches_he_descriptors")
 ```
 
-Finally, spin up the project and apply database migrations:
+Spin up the project and apply database migrations:
 
 ``` shell
 python manage.py migrate
