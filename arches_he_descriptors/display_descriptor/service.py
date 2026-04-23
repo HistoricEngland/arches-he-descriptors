@@ -131,18 +131,6 @@ class DisplayDescriptorService:
                 f"Invalid display descriptor config for graph {graph_id}: {exc}"
             )
 
-    def _resolve_config(
-        self,
-        resource_id: str,
-        config_data: Optional[Dict[str, Any]] = None,
-    ) -> Optional[DisplayDescriptorConfig]:
-        """Resolve config with API override precedence, then graph DB lookup."""
-        if config_data is not None:
-            return self._parse_config_data(config_data)
-
-        graph_id = self._get_resource_graph_id(resource_id)
-        return self._load_graph_config(graph_id)
-
     def render_with_config(
         self, resource: Dict[str, Any], config_data: Dict[str, Any]
     ) -> Optional[str]:
@@ -181,12 +169,20 @@ class DisplayDescriptorService:
         Validates that all configured fields exist in the resource graph and that all
         configured subfields share nodegroup with their parent field.
         """
-        config = self._resolve_config(resource_id=resource_id, config_data=config_data)
+        if config_data is not None:
+            config = self._parse_config_data(config_data)
+            graph_id = self._get_resource_graph_id(resource_id)
+        else:
+            graph_id = self._get_resource_graph_id(resource_id)
+            config = self._load_graph_config(graph_id)
+
         if config is None:
             return ({}, None) if return_config else {}
 
         self._config_cache = config
-        node_map = self._resolve_nodes_for_configured_fields(resource_id, config=config)
+        node_map = self._resolve_nodes_for_configured_fields(
+            resource_id, config=config, graph_id=graph_id
+        )
 
         grouped_fields: Dict[str, List[FieldDefinition]] = defaultdict(list)
         for field in config.fields:
@@ -197,6 +193,7 @@ class DisplayDescriptorService:
         result: Dict[str, Any] = {}
         concept_ids = set()
         concept_placeholders = []
+        descriptor_cache: Dict[str, Optional[str]] = {}
 
         for nodegroup_id, fields in grouped_fields.items():
             tile_rows = (
@@ -228,6 +225,7 @@ class DisplayDescriptorService:
                         datatype=parent_meta["datatype"],
                         language=language,
                         strict_sortorder=strict_sortorder,
+                        descriptor_cache=descriptor_cache,
                     )
 
                     if field.subfields:
@@ -243,6 +241,7 @@ class DisplayDescriptorService:
                                 datatype=sub_meta["datatype"],
                                 language=language,
                                 strict_sortorder=strict_sortorder,
+                                descriptor_cache=descriptor_cache,
                             )
                             entry[subfield_name] = sub_val
 
@@ -354,10 +353,14 @@ class DisplayDescriptorService:
         return engine.render(resource_data)
 
     def _resolve_nodes_for_configured_fields(
-        self, resource_id: str, config: Optional[DisplayDescriptorConfig] = None
+        self,
+        resource_id: str,
+        config: Optional[DisplayDescriptorConfig] = None,
+        graph_id=None,
     ) -> Dict[str, Dict[str, Any]]:
         """Resolve node metadata for configured fields using the resource's graph."""
-        graph_id = self._get_resource_graph_id(resource_id)
+        if graph_id is None:
+            graph_id = self._get_resource_graph_id(resource_id)
         config = config or self._config_cache
         if config is None:
             return {}
@@ -427,6 +430,7 @@ class DisplayDescriptorService:
         datatype: str,
         language: str,
         strict_sortorder: bool = False,
+        descriptor_cache: Optional[Dict[str, Optional[str]]] = None,
     ) -> Any:
         """Extract a node value from tiledata according to datatype."""
         raw = tile_data.get(str(node_id))
@@ -468,6 +472,7 @@ class DisplayDescriptorService:
                 descriptor = self._get_related_resource_descriptor(
                     resource_id=related_resource_id,
                     language=language,
+                    descriptor_cache=descriptor_cache,
                 )
                 if descriptor:
                     descriptors.append(descriptor)
@@ -549,13 +554,20 @@ class DisplayDescriptorService:
         self,
         resource_id: str,
         language: str,
+        descriptor_cache: Optional[Dict[str, Optional[str]]] = None,
     ) -> Optional[str]:
         """Resolve a related resource ID to its stored descriptor string."""
         resource_id = str(resource_id).strip()
         if resource_id == "":
             return None
 
-        descriptor = self._get_stored_resource_descriptor(resource_id, language)
+        if descriptor_cache is not None and resource_id in descriptor_cache:
+            descriptor = descriptor_cache[resource_id]
+        else:
+            descriptor = self._get_stored_resource_descriptor(resource_id, language)
+            if descriptor_cache is not None:
+                descriptor_cache[resource_id] = descriptor
+
         if descriptor is not None:
             descriptor = str(descriptor).strip() or None
 
