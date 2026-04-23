@@ -138,6 +138,7 @@ If you wire these routes in your project, they support:
 
 - `?descriptor_only=false` to include input payload
 - `?include_sql=true` to include SQL trace metadata when `DEBUG=True`
+- `?include_yaml=true` to include the resolved YAML config string in the JSON response
 - `?strict_sortorder=true` for DB-backed extraction consistency checks
 
 ### 5. Managing Configurations via Django Admin

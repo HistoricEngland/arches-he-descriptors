@@ -235,6 +235,18 @@ Security/operational guard:
 
 ---
 
+## YAML Echo Mode (`include_yaml`)
+
+Query param: `include_yaml=true`
+
+When enabled on `GET|POST /api/display-descriptor/<resource_id>/`:
+
+- Response includes `yaml_config` as a string containing the resolved YAML
+- Response includes `yaml_config_source` set to `graph` (DB-backed config) or `request` (inline POST config)
+- If no graph configuration exists and no inline config is supplied, `yaml_config` is `null`
+
+---
+
 ## Config Parsing and Validation
 
 `DisplayDescriptorService._parse_config_data` transforms raw YAML/JSON into dataclasses:
@@ -301,6 +313,8 @@ Datatype-specific extraction:
 
 - `string`: expects i18n object (`{ "en": {"value": ...} }`), with fallback to first localized value
 - `concept`: returns UUID string placeholder initially
+- `concept-list`: returns a list of concept UUID placeholders and preserves list cardinality
+- `resource-instance` / `resource-instance-list`: extracts related resource IDs and resolves each to that resource's rendered display descriptor, with fallback to the stored resource name descriptor
 - other types: raw value passthrough
 
 Subfield structure handling:
@@ -319,6 +333,11 @@ Subfield structure handling:
 - Collect all concept UUIDs found during extraction
 - Query `values` once using `valueid__in`
 - Replace UUID placeholders with `values.value` labels
+
+### Step 5b: Related resource descriptor resolution
+
+- Resource-instance datatypes resolve each `resourceId` from the stored `ResourceInstance.descriptors` value
+- Descriptor lookup uses the requested language first and falls back to `en`
 
 ### Step 6: Shape result for engine
 

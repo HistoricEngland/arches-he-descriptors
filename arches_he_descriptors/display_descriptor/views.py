@@ -88,6 +88,39 @@ def _add_sql_metadata(payload, include_sql, sql_queries, request_start):
     return payload
 
 
+def _add_yaml_metadata(payload, include_yaml, yaml_config, source=None):
+    if include_yaml:
+        payload["yaml_config"] = yaml_config
+        payload["yaml_config_source"] = source
+    return payload
+
+
+def _serialize_config_to_yaml(config_data):
+    if config_data is None:
+        return None
+    return yaml.safe_dump(config_data, sort_keys=False)
+
+
+def _get_graph_yaml_for_resource(resource_id):
+    from arches.app.models.models import ResourceInstance
+
+    resource = (
+        ResourceInstance.objects.filter(resourceinstanceid=resource_id)
+        .values("graph_id")
+        .first()
+    )
+    if not resource:
+        raise ValueError(f"Resource instance not found: {resource_id}")
+
+    row = (
+        DisplayDescriptorGraphConfig.objects.filter(graph_id=resource["graph_id"])
+        .values("yaml_config")
+        .first()
+    )
+    yaml_config = row.get("yaml_config") if row else None
+    return yaml_config if isinstance(yaml_config, str) and yaml_config.strip() else None
+
+
 @csrf_exempt
 def get_display_descriptor(request, resource_id):
     """
@@ -100,6 +133,7 @@ def get_display_descriptor(request, resource_id):
     Optional query params:
     - descriptor_only=false|0|no|off : include input payload in response (POST only)
     - include_sql=true|1|yes|on : include captured SQL statements and timings
+    - include_yaml=true|1|yes|on : include resolved YAML config string in response
     - strict_sortorder=true|1|yes|on : fail if mixed null/non-null sortorder exists in a nodegroup
     """
     if request.method not in {"GET", "POST"}:
@@ -108,6 +142,7 @@ def get_display_descriptor(request, resource_id):
     try:
         request_start = perf_counter()
         include_sql = _is_truthy(request.GET.get("include_sql"))
+        include_yaml = _is_truthy(request.GET.get("include_yaml"))
         strict_sortorder = _is_truthy(request.GET.get("strict_sortorder"))
         _validate_sql_toggle(include_sql)
 
@@ -121,6 +156,13 @@ def get_display_descriptor(request, resource_id):
             )
             payload = {"resource_id": resource_id,
                        "display_descriptor": descriptor}
+            if include_yaml:
+                payload = _add_yaml_metadata(
+                    payload,
+                    include_yaml=True,
+                    yaml_config=_get_graph_yaml_for_resource(resource_id),
+                    source="graph",
+                )
             return JsonResponse(
                 _add_sql_metadata(payload, include_sql,
                                   sql_queries, request_start)
@@ -130,6 +172,15 @@ def get_display_descriptor(request, resource_id):
         config = data.get("config")
         descriptor_only = _is_descriptor_only(
             request.GET.get("descriptor_only"))
+        yaml_config = None
+        yaml_config_source = None
+        if include_yaml:
+            if config is not None:
+                yaml_config = _serialize_config_to_yaml(config)
+                yaml_config_source = "request"
+            else:
+                yaml_config = _get_graph_yaml_for_resource(resource_id)
+                yaml_config_source = "graph"
 
         service = DisplayDescriptorService()
         resource_payload, sql_queries_data = _execute_with_sql_capture(
@@ -167,6 +218,12 @@ def get_display_descriptor(request, resource_id):
 
         if descriptor_only:
             payload = {"display_descriptor": descriptor}
+            payload = _add_yaml_metadata(
+                payload,
+                include_yaml=include_yaml,
+                yaml_config=yaml_config,
+                source=yaml_config_source,
+            )
             return JsonResponse(
                 _add_sql_metadata(payload, include_sql,
                                   sql_queries, request_start)
@@ -177,6 +234,12 @@ def get_display_descriptor(request, resource_id):
             "input": resource_data,
             "display_descriptor": descriptor,
         }
+        payload = _add_yaml_metadata(
+            payload,
+            include_yaml=include_yaml,
+            yaml_config=yaml_config,
+            source=yaml_config_source,
+        )
         return JsonResponse(
             _add_sql_metadata(payload, include_sql, sql_queries, request_start)
         )
