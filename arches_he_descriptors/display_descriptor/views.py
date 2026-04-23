@@ -81,8 +81,7 @@ def _validate_sql_toggle(include_sql):
 
 def _add_sql_metadata(payload, include_sql, sql_queries, request_start):
     if include_sql:
-        payload["execution_time_ms"] = round(
-            (perf_counter() - request_start) * 1000, 3)
+        payload["execution_time_ms"] = round((perf_counter() - request_start) * 1000, 3)
         payload["sql_query_count"] = len(sql_queries)
         payload["sql_queries"] = sql_queries
     return payload
@@ -154,8 +153,7 @@ def get_display_descriptor(request, resource_id):
                 ),
                 include_sql=include_sql,
             )
-            payload = {"resource_id": resource_id,
-                       "display_descriptor": descriptor}
+            payload = {"resource_id": resource_id, "display_descriptor": descriptor}
             if include_yaml:
                 payload = _add_yaml_metadata(
                     payload,
@@ -164,14 +162,12 @@ def get_display_descriptor(request, resource_id):
                     source="graph",
                 )
             return JsonResponse(
-                _add_sql_metadata(payload, include_sql,
-                                  sql_queries, request_start)
+                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
             )
 
         data = json.loads(request.body) if request.body else {}
         config = data.get("config")
-        descriptor_only = _is_descriptor_only(
-            request.GET.get("descriptor_only"))
+        descriptor_only = _is_descriptor_only(request.GET.get("descriptor_only"))
         yaml_config = None
         yaml_config_source = None
         if include_yaml:
@@ -225,8 +221,7 @@ def get_display_descriptor(request, resource_id):
                 source=yaml_config_source,
             )
             return JsonResponse(
-                _add_sql_metadata(payload, include_sql,
-                                  sql_queries, request_start)
+                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
             )
 
         payload = {
@@ -279,8 +274,7 @@ def preview_display_descriptor(request):
         data = json.loads(request.body)
         resource = data.get("resource", {})
         config = data.get("config")
-        descriptor_only = _is_descriptor_only(
-            request.GET.get("descriptor_only"))
+        descriptor_only = _is_descriptor_only(request.GET.get("descriptor_only"))
         include_sql = _is_truthy(request.GET.get("include_sql"))
         strict_sortorder = _is_truthy(request.GET.get("strict_sortorder"))
         _validate_sql_toggle(include_sql)
@@ -309,8 +303,7 @@ def preview_display_descriptor(request):
         if descriptor_only:
             payload = {"display_descriptor": descriptor}
             return JsonResponse(
-                _add_sql_metadata(payload, include_sql,
-                                  sql_queries, request_start)
+                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
             )
 
         payload = {"input": resource, "display_descriptor": descriptor}
