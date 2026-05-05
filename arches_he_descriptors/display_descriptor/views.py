@@ -39,13 +39,17 @@ def get_display_descriptor_graph_config(request, graph_id):
 def _is_descriptor_only(value):
     if value is None:
         return True
-    return value.strip().lower() not in {"0", "false", "no", "n", "off"}
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"0", "false", "no", "n", "off"}
 
 
 def _is_truthy(value):
     if value is None:
         return False
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _execute_with_sql_capture(func, include_sql=False):
@@ -323,18 +327,30 @@ def test_config_for_resource(request):
     Admin test endpoint to render display descriptor.
 
     Usage: POST /api/display-descriptor/admin-test/
-    Body: {"resource_id": "<uuid>", "graph_id": "<uuid>", "yaml_config": "..."}
+    Body: {
+      "resource_id": "<uuid>",
+      "graph_id": "<uuid>",
+      "yaml_config": "...",
+      "descriptor_only": true|false,
+      "include_sql": true|false
+    }
 
-    Returns: {"display_descriptor": "...", "error": "..."} or error response
+    Returns descriptor-only payload by default, or includes input data when
+    descriptor_only=false. SQL metadata is included when include_sql=true.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     try:
+        request_start = perf_counter()
         data = json.loads(request.body) if request.body else {}
         resource_id = data.get("resource_id")
         graph_id = data.get("graph_id")
         yaml_config = data.get("yaml_config")
+        descriptor_only = _is_descriptor_only(data.get("descriptor_only"))
+        include_sql = _is_truthy(data.get("include_sql"))
+
+        _validate_sql_toggle(include_sql)
 
         if not resource_id:
             return JsonResponse({"error": "resource_id is required"}, status=400)
@@ -381,16 +397,29 @@ def test_config_for_resource(request):
 
         service = DisplayDescriptorService()
 
-        descriptor = service.render_for_resource(
-            resource_id=resource_id,
-            config_data=config_dict,
+        resource_data, sql_queries_data = _execute_with_sql_capture(
+            lambda: service.get_resource_data(
+                resource_id=resource_id,
+                config_data=config_dict,
+            ),
+            include_sql=include_sql,
         )
+        descriptor, sql_queries_render = _execute_with_sql_capture(
+            lambda: service.render_with_config(resource_data, config_dict),
+            include_sql=include_sql,
+        )
+        sql_queries = sql_queries_data + sql_queries_render
+
+        payload = {
+            "display_descriptor": descriptor,
+            "error": None,
+        }
+
+        if not descriptor_only:
+            payload["input"] = resource_data
 
         return JsonResponse(
-            {
-                "display_descriptor": descriptor,
-                "error": None,
-            }
+            _add_sql_metadata(payload, include_sql, sql_queries, request_start)
         )
 
     except json.JSONDecodeError:

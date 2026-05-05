@@ -14,6 +14,18 @@
     <div class="form-row" style="margin-top: 8px;">
       <button type="button" id="test_check_btn" class="button">Check</button>
     </div>
+    <div class="form-row" style="margin-top: 12px;">
+      <div>
+        <label style="display: inline-flex; align-items: center; margin-right: 24px;">
+          <input type="checkbox" id="include_sql" style="margin-right: 8px;" />
+          Show SQL
+        </label>
+        <label style="display: inline-flex; align-items: center;">
+          <input type="checkbox" id="show_data" style="margin-right: 8px;" />
+          Show data
+        </label>
+      </div>
+    </div>
     <div id="test_output" style="margin-top: 12px; padding: 12px; background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; display: none; white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;"></div>
   </fieldset>
 
@@ -48,6 +60,10 @@
       return '#f57f17';
     }
 
+    function formatJsonBlock(label, value) {
+      return `${label}:\n${JSON.stringify(value, null, 2)}`;
+    }
+
     function formatResultBlock(resourceId, data, networkError) {
       if (networkError) {
         return [
@@ -66,18 +82,54 @@
       }
 
       if (data && data.display_descriptor) {
-        return [
+        const lines = [
           `Resource ${resourceId}`,
           `Status: OK`,
           `Descriptor: ${data.display_descriptor}`,
-        ].join('\n');
+        ];
+
+        if (Object.prototype.hasOwnProperty.call(data, 'input')) {
+          lines.push('', formatJsonBlock('Input data', data.input));
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'sql_query_count')) {
+          lines.push(
+            '',
+            `SQL queries: ${data.sql_query_count}`,
+            `Execution time (ms): ${data.execution_time_ms}`
+          );
+
+          if (Array.isArray(data.sql_queries) && data.sql_queries.length) {
+            lines.push('', formatJsonBlock('SQL details', data.sql_queries));
+          }
+        }
+
+        return lines.join('\n');
       }
 
-      return [
+      const lines = [
         `Resource ${resourceId}`,
         `Status: No descriptor`,
         'Message: No display descriptor generated (may be expected if config is set to no-op)',
-      ].join('\n');
+      ];
+
+      if (data && Object.prototype.hasOwnProperty.call(data, 'input')) {
+        lines.push('', formatJsonBlock('Input data', data.input));
+      }
+
+      if (data && Object.prototype.hasOwnProperty.call(data, 'sql_query_count')) {
+        lines.push(
+          '',
+          `SQL queries: ${data.sql_query_count}`,
+          `Execution time (ms): ${data.execution_time_ms}`
+        );
+
+        if (Array.isArray(data.sql_queries) && data.sql_queries.length) {
+          lines.push('', formatJsonBlock('SQL details', data.sql_queries));
+        }
+      }
+
+      return lines.join('\n');
     }
 
     document.getElementById('test_check_btn').addEventListener('click', function() {
@@ -142,6 +194,8 @@
             resource_id: resourceId,
             graph_id: graphId,
             yaml_config: yamlConfig,
+            include_sql: document.getElementById('include_sql').checked,
+            descriptor_only: !document.getElementById('show_data').checked,
           }),
         })
           .then(response => response.json())
