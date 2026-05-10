@@ -52,11 +52,38 @@ class DisplayDescriptorService:
         fields = []
         for field_data in fields_data:
             if isinstance(field_data, str):
-                fields.append(FieldDefinition(name=field_data))
+                normalized_name = str(field_data)
+                fields.append(
+                    FieldDefinition(
+                        name=normalized_name,
+                        graph_name=normalized_name,
+                    )
+                )
             elif isinstance(field_data, dict):
-                name = field_data.get("name", "")
-                subfields = field_data.get("subfields", [])
-                fields.append(FieldDefinition(name=name, subfields=subfields))
+                graph_name = str(field_data.get("name", "") or "")
+                alias = str(field_data.get("alias", "") or "")
+                nodeid = str(field_data.get("nodeid", "") or "")
+
+                raw_subfields = field_data.get("subfields", [])
+                normalized_subfields: List[str] = []
+                if isinstance(raw_subfields, list):
+                    for subfield in raw_subfields:
+                        if isinstance(subfield, dict):
+                            sub_name = str(subfield.get("name", "") or "")
+                            if sub_name:
+                                normalized_subfields.append(sub_name)
+                        elif subfield is not None:
+                            normalized_subfields.append(str(subfield))
+
+                fields.append(
+                    FieldDefinition(
+                        name=alias or graph_name,
+                        graph_name=graph_name,
+                        nodeid=nodeid or None,
+                        alias=alias or None,
+                        subfields=normalized_subfields,
+                    )
+                )
 
         rule_blocks = []
         for block_data in rules_data:
@@ -365,27 +392,84 @@ class DisplayDescriptorService:
         if config is None:
             return {}
 
-        requested_names = []
+        requested_subfield_names = []
         for field in config.fields:
-            requested_names.append(field.name)
-            requested_names.extend(field.subfields)
+            requested_subfield_names.extend(field.subfields)
 
-        requested_names = list(dict.fromkeys(requested_names))
+        requested_subfield_names = list(dict.fromkeys(requested_subfield_names))
 
         from arches.app.models.models import Node
 
-        nodes = Node.objects.filter(graph_id=graph_id, name__in=requested_names).values(
+        nodes = Node.objects.filter(graph_id=graph_id).values(
             "name", "nodeid", "datatype", "nodegroup_id"
         )
 
-        node_map = {n["name"]: n for n in nodes}
+        nodes_by_name: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        nodes_by_id: Dict[str, Dict[str, Any]] = {}
+        for node in nodes:
+            node_name = str(node["name"])
+            node_id = str(node["nodeid"])
+            nodes_by_name[node_name].append(node)
+            nodes_by_id[node_id] = node
 
-        missing = [name for name in requested_names if name not in node_map]
-        if missing:
-            raise ValueError(
-                "Configured fields are missing from graph "
-                f"{graph_id}: {', '.join(sorted(missing))}"
-            )
+        node_map: Dict[str, Dict[str, Any]] = {}
+
+        for field in config.fields:
+            field_key = field.name
+            parent_graph_name = field.graph_name or field.name
+            explicit_nodeid = str(field.nodeid) if field.nodeid else None
+
+            resolved_parent = None
+            if explicit_nodeid:
+                candidate = nodes_by_id.get(explicit_nodeid)
+                if candidate and str(candidate["name"]) == parent_graph_name:
+                    resolved_parent = candidate
+                elif candidate:
+                    raise ValueError(
+                        "Configured field nodeid/name mismatch for "
+                        f"{field_key}: nodeid {explicit_nodeid} resolves to "
+                        f"{candidate['name']} not {parent_graph_name}"
+                    )
+                else:
+                    raise ValueError(
+                        "Configured field nodeid is missing from graph "
+                        f"{graph_id}: {explicit_nodeid}"
+                    )
+            else:
+                parent_candidates = nodes_by_name.get(parent_graph_name, [])
+                if len(parent_candidates) == 1:
+                    resolved_parent = parent_candidates[0]
+                elif len(parent_candidates) == 0:
+                    raise ValueError(
+                        "Configured fields are missing from graph "
+                        f"{graph_id}: {parent_graph_name}"
+                    )
+                else:
+                    raise ValueError(
+                        "Configured field name is ambiguous in graph "
+                        f"{graph_id}: {parent_graph_name}. "
+                        "Specify nodeid to disambiguate."
+                    )
+
+            node_map[field_key] = resolved_parent
+
+        for subfield_name in requested_subfield_names:
+            if subfield_name in node_map:
+                continue
+            subfield_candidates = nodes_by_name.get(subfield_name, [])
+            if len(subfield_candidates) == 1:
+                node_map[subfield_name] = subfield_candidates[0]
+            elif len(subfield_candidates) == 0:
+                raise ValueError(
+                    "Configured fields are missing from graph "
+                    f"{graph_id}: {subfield_name}"
+                )
+            else:
+                raise ValueError(
+                    "Configured subfield name is ambiguous in graph "
+                    f"{graph_id}: {subfield_name}. "
+                    "Use unique subfield names or extend config with subfield nodeid support."
+                )
 
         nodegroup_errors = []
         for field in config.fields:
