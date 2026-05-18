@@ -507,6 +507,19 @@ def apply_operation_chain(value: Any, ops: List[Operation]) -> Any:
     return value
 
 
+def _is_missing_value(value: Any) -> bool:
+    """Treat empty containers and blank strings as absent for rule matching."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, list):
+        return len(value) == 0
+    if isinstance(value, dict) and "value" in value:
+        return _is_missing_value(value.get("value"))
+    return False
+
+
 # -------------------------------------------------------------------
 # Selector logic (including Statutory|Original|FIRST)
 # -------------------------------------------------------------------
@@ -660,7 +673,7 @@ def execute_rule_definition(
     value = select_field_value(rule, resource, field_defs)
     used_default = False
 
-    if value is None:
+    if _is_missing_value(value):
         if rule.default is not None:
             value = rule.default
             used_default = True
