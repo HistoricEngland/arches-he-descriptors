@@ -322,6 +322,8 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                 spec["resolved_name"] = single[0]["name"]
                 spec["nodeid"] = single[0]["nodeid"]
                 spec["comment"] = f"c_name: {field_name} | {single[0]['nodeid']}"
+                if not field_alias and field_name != single[0]["name"]:
+                    spec["alias"] = field_name
             else:
                 spec["comment"] = f"c_name: {field_name} | unresolved"
         else:
@@ -388,6 +390,8 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                     sub_spec["resolved_name"] = single[0]["name"]
                     sub_spec["nodeid"] = single[0]["nodeid"]
                     sub_spec["comment"] = f"c_name: {subfield} | {single[0]['nodeid']}"
+                    if not subfield_alias and subfield != single[0]["name"]:
+                        sub_spec["alias"] = subfield
                 else:
                     sub_spec["comment"] = f"c_name: {subfield} | unresolved"
             else:
