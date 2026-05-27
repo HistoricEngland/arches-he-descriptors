@@ -74,6 +74,27 @@ def op_uppercase(value: Any) -> Any:
     return value
 
 
+def _resolve_filter_field_name(
+    field_ref: str, field_defs: Optional[List[FieldDefinition]] = None
+) -> str:
+    """
+    Resolve a field reference (which may be an alias) to its actual field name.
+    If field_ref is a subfield alias, returns the actual subfield name.
+    If field_defs is not provided or field_ref is not found, returns field_ref unchanged.
+    """
+    if not field_defs:
+        return field_ref
+
+    # Check if field_ref is an alias or name for a subfield
+    for field_def in field_defs:
+        for subfield_def in field_def.subfields:
+            # Check if field_ref matches either the subfield name or its alias
+            if subfield_def.name == field_ref or subfield_def.alias == field_ref:
+                return subfield_def.name
+
+    return field_ref
+
+
 def op_lowercase(value: Any) -> Any:
     if isinstance(value, str):
         return value.lower()
@@ -526,18 +547,29 @@ def _is_missing_value(value: Any) -> bool:
 
 
 def _priority_select(
-    candidates: List[Dict[str, Any]], field: str, priority_spec: str
+    candidates: List[Dict[str, Any]],
+    field: str,
+    priority_spec: str,
+    field_defs: Optional[List[FieldDefinition]] = None,
 ) -> List[Dict[str, Any]]:
     """
     priority_spec example: "Statutory|Original|FIRST"
-    """
-    options = priority_spec.split("|")
-    remaining = candidates
 
+    Empty tokens (produced by a bare "|" spec) are skipped.  If no non-empty
+    tokens remain, all candidates are returned unchanged — making "|" an
+    explicit "return everything" / no-op filter.
+    """
+    resolved_field = _resolve_filter_field_name(field, field_defs)
+    options = [o for o in priority_spec.split("|") if o]
+
+    if not options:
+        return candidates
+
+    remaining = candidates
     for opt in options:
         if opt == "FIRST":
             return remaining[:1] if remaining else []
-        filtered = [c for c in remaining if c.get(field) == opt]
+        filtered = [c for c in remaining if c.get(resolved_field) == opt]
         if filtered:
             # Pick the first matching candidate to enforce a single value
             return filtered[:1]
@@ -546,20 +578,98 @@ def _priority_select(
 
 
 def _match_filter_value_simple(
-    candidate: Dict[str, Any], field: str, allowed: List[str]
+    candidate: Dict[str, Any],
+    field: str,
+    allowed: List[str],
+    field_defs: Optional[List[FieldDefinition]] = None,
 ) -> bool:
-    value = candidate.get(field)
+    resolved_field = _resolve_filter_field_name(field, field_defs)
+    value = candidate.get(resolved_field)
     return value in allowed
 
 
 def _find_parent_field_for_subfield(
     field_defs: List[FieldDefinition], subfield_name: str
 ) -> Optional[str]:
-    """Find the parent field that contains the given subfield."""
+    """Find the parent field that contains the given subfield (by name or alias)."""
     for field_def in field_defs:
-        if subfield_name in field_def.subfields:
-            return field_def.name
+        for subfield_def in field_def.subfields:
+            # Check if subfield_name matches either the name or alias
+            if (
+                subfield_def.name == subfield_name
+                or subfield_def.alias == subfield_name
+            ):
+                return field_def.name
     return None
+
+
+def _extract_subfield_context_from_filtered(
+    rule: RuleDefinition,
+    resource: Dict[str, Any],
+    field_defs: List[FieldDefinition],
+) -> Dict[str, Any]:
+    """
+    Compute subfield context for a parent-field rule.
+
+    Applies any field_filters the rule declares (or uses all candidates when
+    no filters are set) then deduplicates each subfield's values:
+      - Single unique value  → added to context under canonical name + alias
+      - Multiple different   → added as None so format_when_default fires
+      - No values at all     → omitted from context
+    """
+    raw_value = resource.get(rule.name)
+    if not isinstance(raw_value, list) or not all(
+        isinstance(x, dict) for x in raw_value
+    ):
+        return {}
+
+    candidates: List[Dict[str, Any]] = list(raw_value)
+    if rule.field_filters:
+        for field_key, allowed in rule.field_filters.items():
+            if len(allowed) == 1 and isinstance(allowed[0], str) and "|" in allowed[0]:
+                candidates = _priority_select(
+                    candidates, field_key, allowed[0], field_defs
+                )
+            else:
+                candidates = [
+                    c
+                    for c in candidates
+                    if _match_filter_value_simple(c, field_key, allowed, field_defs)
+                ]
+            if not candidates:
+                break
+
+    if not candidates:
+        return {}
+
+    result: Dict[str, Any] = {}
+    for field_def in field_defs:
+        if field_def.name != rule.name:
+            continue
+        for subfield_def in field_def.subfields:
+            values = [
+                c[subfield_def.name] for c in candidates if subfield_def.name in c
+            ]
+            # Deduplicate while preserving order
+            seen: set = set()
+            unique: List[Any] = []
+            for v in values:
+                k = str(v)
+                if k not in seen:
+                    seen.add(k)
+                    unique.append(v)
+            if len(unique) == 1:
+                # All candidates agree — expose the single value
+                result[subfield_def.name] = unique[0]
+                if subfield_def.alias:
+                    result[subfield_def.alias] = unique[0]
+            elif len(unique) > 1:
+                # Candidates disagree — mark as ambiguous (None) so that
+                # format_when_default fires rather than format_when_present
+                result[subfield_def.name] = None
+                if subfield_def.alias:
+                    result[subfield_def.alias] = None
+    return result
 
 
 def select_field_value(
@@ -591,13 +701,15 @@ def select_field_value(
         if raw_value is None:
             return None
 
+        resolved_subfield_name = _resolve_filter_field_name(rule.name, field_defs)
+
         # Extract the subfield from the parent field's value(s)
         if isinstance(raw_value, list) and all(isinstance(x, dict) for x in raw_value):
             # Parent field is a list of dict entries; extract subfield from each
             subfield_values = []
             for entry in raw_value:
-                if rule.name in entry:
-                    subfield_values.append(entry[rule.name])
+                if resolved_subfield_name in entry:
+                    subfield_values.append(entry[resolved_subfield_name])
 
             if not subfield_values:
                 return None
@@ -606,7 +718,7 @@ def select_field_value(
             return subfield_values
         elif isinstance(raw_value, dict):
             # Single dict entry
-            return raw_value.get(rule.name)
+            return raw_value.get(resolved_subfield_name)
         return None
 
     # Original logic for non-subfield rules
@@ -624,12 +736,12 @@ def select_field_value(
 
         for field, allowed in rule.field_filters.items():
             if len(allowed) == 1 and isinstance(allowed[0], str) and "|" in allowed[0]:
-                candidates = _priority_select(candidates, field, allowed[0])
+                candidates = _priority_select(candidates, field, allowed[0], field_defs)
             else:
                 candidates = [
                     c
                     for c in candidates
-                    if _match_filter_value_simple(c, field, allowed)
+                    if _match_filter_value_simple(c, field, allowed, field_defs)
                 ]
 
             if not candidates:
@@ -702,7 +814,11 @@ def execute_rule_block(
     for rule in block.rule:
         # Check if this rule references a subfield that was already populated from a parent field
         is_subfield = field_defs and any(
-            rule.name in field_def.subfields for field_def in field_defs
+            any(
+                subfield_def.name == rule.name or subfield_def.alias == rule.name
+                for subfield_def in field_def.subfields
+            )
+            for field_def in field_defs
         )
 
         if is_subfield and rule.name in context:
@@ -722,15 +838,51 @@ def execute_rule_block(
         subfield_context: Dict[str, Any] = {}
         if isinstance(value, dict) and "value" in value:
             subfield_context = {k: v for k, v in value.items() if k != "value"}
+            # Also register alias keys so format strings and subfield rule
+            # lookups can use the alias (e.g. {MNUT}) as well as the full name.
+            if field_defs:
+                for field_def in field_defs:
+                    for subfield_def in field_def.subfields:
+                        if (
+                            subfield_def.alias
+                            and subfield_def.name in subfield_context
+                            and subfield_def.alias not in subfield_context
+                        ):
+                            subfield_context[subfield_def.alias] = subfield_context[
+                                subfield_def.name
+                            ]
             value = value["value"]
+
+        # For any parent field with subfields, derive the subfield context by
+        # filtering (or using all candidates when no filters are set) and
+        # deduplicating.  This runs whenever the single-match dict path above
+        # did not already populate subfield_context.
+        if field_defs and not subfield_context:
+            is_parent_field = any(
+                field_def.name == rule.name and field_def.subfields
+                for field_def in field_defs
+            )
+            if is_parent_field:
+                subfield_context = _extract_subfield_context_from_filtered(
+                    rule, resource, field_defs
+                )
 
         if value is None and rule.required:
             return None
 
-        if used_default and rule.format_when_default:
-            formatted = rule.format_when_default.format(**{rule.name: value})
+        value_is_missing = _is_missing_value(value)
+        if (used_default or value_is_missing) and rule.format_when_default is not None:
+            # Value is absent/ambiguous or came from a default — use format_when_default.
+            # Guard uses `is not None` so that an empty-string format_when_default: ""
+            # still fires (a plain truthiness check would skip it).
+            display_value = value if not value_is_missing else ""
+            formatted = rule.format_when_default.format(**{rule.name: display_value})
             context[rule.name] = formatted
-        elif not used_default and rule.format_when_present:
+        elif (
+            not used_default
+            and not value_is_missing
+            and rule.format_when_present is not None
+        ):
             formatted = rule.format_when_present.format(**{rule.name: value})
             context[rule.name] = formatted
         else:

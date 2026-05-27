@@ -24,7 +24,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "arches>=7.6.23,<7.7.0",
+    "arches>=7.6.17,<7.7.0",
+#    "arches>=7.6.23,<7.7.0",
+#    "arches==7.6.17",
     "PyYAML>=6.0",
 ]
 version = "0.0.1"

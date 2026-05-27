@@ -3,12 +3,18 @@ from typing import List, Optional, Dict, Any
 
 
 @dataclass
+class SubfieldDefinition:
+    name: str
+    alias: Optional[str] = None
+
+
+@dataclass
 class FieldDefinition:
     name: str
     graph_name: Optional[str] = None
     nodeid: Optional[str] = None
     alias: Optional[str] = None
-    subfields: List[str] = field(default_factory=list)
+    subfields: List[SubfieldDefinition] = field(default_factory=list)
 
 
 @dataclass

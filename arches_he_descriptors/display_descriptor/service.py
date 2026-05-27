@@ -7,6 +7,7 @@ from .engine import DisplayDescriptorEngine, OperationType
 from .schema import (
     DisplayDescriptorConfig,
     FieldDefinition,
+    SubfieldDefinition,
     Operation,
     RuleDefinition,
     DisplayDescriptorRuleBlock,
@@ -65,15 +66,22 @@ class DisplayDescriptorService:
                 nodeid = str(field_data.get("nodeid", "") or "")
 
                 raw_subfields = field_data.get("subfields", [])
-                normalized_subfields: List[str] = []
+                normalized_subfields: List[SubfieldDefinition] = []
                 if isinstance(raw_subfields, list):
                     for subfield in raw_subfields:
                         if isinstance(subfield, dict):
                             sub_name = str(subfield.get("name", "") or "")
+                            sub_alias = str(subfield.get("alias", "") or "")
                             if sub_name:
-                                normalized_subfields.append(sub_name)
+                                normalized_subfields.append(
+                                    SubfieldDefinition(
+                                        name=sub_name, alias=sub_alias or None
+                                    )
+                                )
                         elif subfield is not None:
-                            normalized_subfields.append(str(subfield))
+                            normalized_subfields.append(
+                                SubfieldDefinition(name=str(subfield))
+                            )
 
                 fields.append(
                     FieldDefinition(
@@ -260,7 +268,8 @@ class DisplayDescriptorService:
                             continue
 
                         entry = {"value": parent_val}
-                        for subfield_name in field.subfields:
+                        for subfield_def in field.subfields:
+                            subfield_name = subfield_def.name
                             sub_meta = node_map[subfield_name]
                             sub_val = self._extract_value(
                                 tile_data=tile_data,
@@ -394,7 +403,9 @@ class DisplayDescriptorService:
 
         requested_subfield_names = []
         for field in config.fields:
-            requested_subfield_names.extend(field.subfields)
+            requested_subfield_names.extend(
+                subfield_def.name for subfield_def in field.subfields
+            )
 
         requested_subfield_names = list(dict.fromkeys(requested_subfield_names))
 
@@ -477,14 +488,15 @@ class DisplayDescriptorService:
             parent_nodegroup = (
                 str(parent["nodegroup_id"]) if parent["nodegroup_id"] else None
             )
-            for subfield in field.subfields:
-                child = node_map[subfield]
+            for subfield_def in field.subfields:
+                subfield_name = subfield_def.name
+                child = node_map[subfield_name]
                 child_nodegroup = (
                     str(child["nodegroup_id"]) if child["nodegroup_id"] else None
                 )
                 if parent_nodegroup != child_nodegroup:
                     nodegroup_errors.append(
-                        f"{field.name} -> {subfield} (parent={parent_nodegroup}, subfield={child_nodegroup})"
+                        f"{field.name} -> {subfield_name} (parent={parent_nodegroup}, subfield={child_nodegroup})"
                     )
 
         if nodegroup_errors:
