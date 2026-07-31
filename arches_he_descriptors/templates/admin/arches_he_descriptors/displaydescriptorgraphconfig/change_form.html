@@ -34,10 +34,13 @@
   .cm-s-one-dark .cm-error,
   .cm-s-one-dark .cm-invalidchar { color: #f44; }
 
-  /* Hide the raw textarea — CodeMirror takes over */
-  textarea[name="yaml_config"] {
+  /* Hide the raw section textareas — CodeMirror takes over */
+  textarea[name="yaml_config_display_name"],
+  textarea[name="yaml_config_display_description"],
+  textarea[name="yaml_config_map_popup"] {
     display: none !important;
   }
+
   .CodeMirror {
     height: 520px;
     width: 100%;
@@ -50,6 +53,40 @@
   .CodeMirror-focused {
     border-color: #528bff;
   }
+
+  /* Descriptor-type tab nav */
+  .descriptor-tab-nav {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #ccc;
+    margin-bottom: 16px;
+  }
+  .descriptor-tab-btn {
+    padding: 8px 20px;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 13px;
+    margin-right: 4px;
+    border-radius: 4px 4px 0 0;
+    color: #333;
+  }
+  .descriptor-tab-btn:hover {
+    background: #e8e8e8;
+  }
+  .descriptor-tab-btn[aria-selected="true"] {
+    background: #fff;
+    border-color: #ccc;
+    border-bottom-color: #fff;
+    font-weight: bold;
+    color: #000;
+    margin-bottom: -2px;
+    padding-bottom: 10px;
+  }
+  .descriptor-tab-panel[hidden] {
+    display: none;
+  }
 </style>
 {% endblock %}
 
@@ -58,34 +95,114 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
 <script>
-  function initYamlEditor() {
-    const textarea = document.querySelector('textarea[name="yaml_config"]');
-    if (!textarea) return;
+  const DESCRIPTOR_SECTIONS = [
+    { key: 'display_name',        label: 'Display name',        fieldName: 'yaml_config_display_name' },
+    { key: 'display_description', label: 'Display description', fieldName: 'yaml_config_display_description' },
+    { key: 'map_popup',           label: 'Map popup',           fieldName: 'yaml_config_map_popup' },
+  ];
 
-    const editor = CodeMirror.fromTextArea(textarea, {
-      mode: 'yaml',
-      theme: 'one-dark',
-      lineNumbers: true,
-      lineWrapping: true,
-      tabSize: 2,
-      indentWithTabs: false,
-      extraKeys: {
-        Tab: function(cm) { cm.replaceSelection('  '); },
-      },
+  // editors[fieldName] → CodeMirror instance
+  const editors = {};
+  let activeDescriptorType = DESCRIPTOR_SECTIONS[0].key;
+
+  function initYamlEditors() {
+    // Locate the three field rows rendered by Django admin
+    const fieldRows = {};
+    DESCRIPTOR_SECTIONS.forEach(function(section) {
+      const row = document.querySelector('.field-' + section.fieldName);
+      if (row) fieldRows[section.key] = row;
     });
 
-    editor.setSize(null, 520);
+    if (!Object.keys(fieldRows).length) return;
 
-    // Keep textarea in sync on every change so the Test button reads current content
-    editor.on('change', function() {
-      editor.save();
+    // Build the tab nav and panels, wrapping the existing field rows
+    const firstRow = fieldRows[DESCRIPTOR_SECTIONS[0].key];
+    if (!firstRow) return;
+
+    const nav = document.createElement('div');
+    nav.className = 'descriptor-tab-nav';
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-label', 'Descriptor type configuration');
+
+    DESCRIPTOR_SECTIONS.forEach(function(section, index) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'descriptor-tab-btn';
+      btn.textContent = section.label;
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+      btn.setAttribute('aria-controls', 'tab-panel-' + section.key);
+      btn.setAttribute('id', 'tab-btn-' + section.key);
+      btn.dataset.key = section.key;
+      btn.addEventListener('click', function() { activateTab(section.key); });
+      nav.appendChild(btn);
+    });
+
+    // Insert nav before the first field row
+    firstRow.parentNode.insertBefore(nav, firstRow);
+
+    // Wrap each field row in a tab panel div and initialise CodeMirror
+    DESCRIPTOR_SECTIONS.forEach(function(section, index) {
+      const row = fieldRows[section.key];
+      if (!row) return;
+
+      const panel = document.createElement('div');
+      panel.className = 'descriptor-tab-panel';
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('id', 'tab-panel-' + section.key);
+      panel.setAttribute('aria-labelledby', 'tab-btn-' + section.key);
+      if (index !== 0) panel.hidden = true;
+
+      row.parentNode.insertBefore(panel, row);
+      panel.appendChild(row);
+
+      // Strip the Django-generated label (it's now represented by the tab)
+      const labelEl = row.querySelector('label');
+      if (labelEl) labelEl.style.display = 'none';
+
+      const textarea = row.querySelector('textarea[name="' + section.fieldName + '"]');
+      if (!textarea) return;
+
+      const editor = CodeMirror.fromTextArea(textarea, {
+        mode: 'yaml',
+        theme: 'one-dark',
+        lineNumbers: true,
+        lineWrapping: true,
+        tabSize: 2,
+        indentWithTabs: false,
+        extraKeys: { Tab: function(cm) { cm.replaceSelection('  '); } },
+      });
+      editor.setSize(null, 520);
+      editor.on('change', function() { editor.save(); });
+
+      editors[section.key] = editor;
     });
   }
 
+  function activateTab(key) {
+    activeDescriptorType = key;
+    DESCRIPTOR_SECTIONS.forEach(function(section) {
+      const btn = document.getElementById('tab-btn-' + section.key);
+      const panel = document.getElementById('tab-panel-' + section.key);
+      const isActive = section.key === key;
+      if (btn) btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (panel) panel.hidden = !isActive;
+      // Refresh CodeMirror layout when its panel becomes visible
+      if (isActive && editors[section.key]) {
+        editors[section.key].refresh();
+      }
+    });
+  }
+
+  function getActiveYamlConfig() {
+    const editor = editors[activeDescriptorType];
+    return editor ? editor.getValue().trim() : '';
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initYamlEditor);
+    document.addEventListener('DOMContentLoaded', initYamlEditors);
   } else {
-    initYamlEditor();
+    initYamlEditors();
   }
 </script>
 {% endblock %}
@@ -95,6 +212,9 @@
 
   <fieldset class="module aligned wide">
     <h2>Test Display Descriptor</h2>
+    <p style="color: #666; font-size: 12px; margin-top: 0;">
+      Tests the YAML from the currently selected tab against the specified resource(s).
+    </p>
     <div class="form-row">
       <div>
         <label for="test_resource_id">Resource UUID(s):</label>
@@ -251,18 +371,10 @@
         return;
       }
 
-      // Get current YAML config from the textarea (allow unsaved changes)
-      const yamlConfigTextarea = document.querySelector('textarea[name="yaml_config"]');
-      if (!yamlConfigTextarea) {
-        outputDiv.textContent = 'Error: yaml_config textarea not found in form';
-        outputDiv.style.display = 'block';
-        outputDiv.style.color = '#d32f2f';
-        return;
-      }
-
-      const yamlConfig = yamlConfigTextarea.value.trim();
+      // Get YAML from the currently active descriptor tab
+      const yamlConfig = getActiveYamlConfig();
       if (!yamlConfig) {
-        outputDiv.textContent = 'Error: YAML config is empty';
+        outputDiv.textContent = 'Error: YAML config is empty on the active tab (' + activeDescriptorType + ')';
         outputDiv.style.display = 'block';
         outputDiv.style.color = '#d32f2f';
         return;

@@ -143,9 +143,12 @@ class DisplayDescriptorService:
             fields=fields, display_descriptor_rules=rule_blocks
         )
 
-    def _load_graph_config(self, graph_id) -> Optional[DisplayDescriptorConfig]:
+    def _load_graph_config(
+        self, graph_id, descriptor_type: Optional[str] = None
+    ) -> Optional[DisplayDescriptorConfig]:
         """Load graph-scoped descriptor configuration from the database."""
         from ..models import DisplayDescriptorGraphConfig
+        from .yaml_transform import extract_yaml_section, _load_json_sections
 
         row = (
             DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id)
@@ -158,6 +161,16 @@ class DisplayDescriptorService:
         yaml_config = row.get("yaml_config")
         if not isinstance(yaml_config, str) or yaml_config.strip() == "":
             return None
+
+        if descriptor_type:
+            yaml_config = extract_yaml_section(yaml_config, descriptor_type)
+            if not yaml_config:
+                return None
+        elif _load_json_sections(yaml_config) is not None:
+            # JSON format without a specified type — default to display_name
+            yaml_config = extract_yaml_section(yaml_config, "display_name")
+            if not yaml_config:
+                return None
 
         try:
             return self.load_config_from_yaml(yaml_config)
@@ -198,6 +211,7 @@ class DisplayDescriptorService:
         strict_sortorder: bool = False,
         config_data: Optional[Dict[str, Any]] = None,
         return_config: bool = False,
+        descriptor_type: Optional[str] = None,
     ) -> Any:
         """Build descriptor input data for a resource using resolved config.
 
@@ -209,7 +223,7 @@ class DisplayDescriptorService:
             graph_id = self._get_resource_graph_id(resource_id)
         else:
             graph_id = self._get_resource_graph_id(resource_id)
-            config = self._load_graph_config(graph_id)
+            config = self._load_graph_config(graph_id, descriptor_type=descriptor_type)
 
         if config is None:
             return ({}, None) if return_config else {}
@@ -373,6 +387,7 @@ class DisplayDescriptorService:
         language: str = "en",
         strict_sortorder: bool = False,
         config_data: Optional[Dict[str, Any]] = None,
+        descriptor_type: Optional[str] = None,
     ) -> Optional[str]:
         """Build resource data from the DB and render the configured descriptor."""
         resource_data, config = self.get_resource_data(
@@ -381,6 +396,7 @@ class DisplayDescriptorService:
             strict_sortorder=strict_sortorder,
             config_data=config_data,
             return_config=True,
+            descriptor_type=descriptor_type,
         )
         if config is None:
             return None
@@ -794,7 +810,10 @@ def render_display_descriptor(resource: Dict[str, Any]) -> Optional[str]:
 
 
 def render_display_descriptor_for_resource(
-    resource_id: str, language: str = "en", strict_sortorder: bool = False
+    resource_id: str,
+    language: str = "en",
+    strict_sortorder: bool = False,
+    descriptor_type: Optional[str] = None,
 ) -> Optional[str]:
     """Convenience function to build resource data and render a display descriptor."""
     service = get_display_descriptor_service()
@@ -802,4 +821,5 @@ def render_display_descriptor_for_resource(
         resource_id=resource_id,
         language=language,
         strict_sortorder=strict_sortorder,
+        descriptor_type=descriptor_type,
     )

@@ -46,22 +46,16 @@
         <div class="row widget-container">
             <div class="form-group">
                 <div class="relative">
-                    <label class="col-xs-12 control-label widget-input-label"> {% trans "Card Name" %}</label>
+                    <label class="col-xs-12 control-label widget-input-label"> {% trans "YAML Configuration" %}</label>
                 </div>
-
-                <div class="col-xs-12">
-                    <select data-placeholder="{% trans "Select a card from which to choose nodes to power your primary description identifier." %}" data-bind="value: description.nodegroup_id, options: cards, optionsText: 'name', optionsValue: 'nodegroup_id', valueAllowUnset: true, chosen: {width: '100%', allow_single_deselect: true, disable_search_threshold: 15}"></select>
+                <div class="col-xs-12" data-bind="visible: yamlConfigLoading">
+                    {% trans "Loading..." %}
                 </div>
-            </div>
-        </div>
-        <div class="row widget-container">
-            <div class="form-group">
-                <div class="relative">
-                    <label class="col-xs-12 control-label widget-input-label"> {% trans "Primary Description Template" %}</label>
+                <div class="col-xs-12" data-bind="visible: !yamlConfigLoading() && hasYamlConfigDisplayDescription()">
+                    <textarea class="form-control widget-input" rows="16" readonly style="font-family: monospace; white-space: pre; resize: vertical;" data-bind="value: yamlConfigDisplayDescription"></textarea>
                 </div>
-
-                <div class="col-xs-12">
-                    <input placeholder="{% trans 'Use bracketed node names like this: <node name>' %}" class="form-control input-lg widget-input" data-bind="textInput: description.string_template">
+                <div class="col-xs-12" data-bind="visible: !yamlConfigLoading() && !hasYamlConfigDisplayDescription()">
+                    {% trans "Not yet configured" %}
                 </div>
             </div>
         </div>
@@ -71,22 +65,16 @@
         <div class="row widget-container">
             <div class="form-group">
                 <div class="relative">
-                    <label class="col-xs-12 control-label widget-input-label"> {% trans "Card Name" %}</label>
+                    <label class="col-xs-12 control-label widget-input-label"> {% trans "YAML Configuration" %}</label>
                 </div>
-
-                <div class="col-xs-12">
-                    <select data-placeholder="{% trans "Select a card from which to choose nodes to power your primary description identifier." %}" data-bind="value: map_popup.nodegroup_id, options: cards, optionsText: 'name', optionsValue: 'nodegroup_id', valueAllowUnset: true, chosen: {width: '100%', allow_single_deselect: true, disable_search_threshold: 15}"></select>
+                <div class="col-xs-12" data-bind="visible: yamlConfigLoading">
+                    {% trans "Loading..." %}
                 </div>
-            </div>
-        </div>
-        <div class="row widget-container">
-            <div class="form-group">
-                <div class="relative">
-                    <label class="col-xs-12 control-label widget-input-label"> {% trans "Map Popup Template" %}</label>
+                <div class="col-xs-12" data-bind="visible: !yamlConfigLoading() && hasYamlConfigMapPopup()">
+                    <textarea class="form-control widget-input" rows="16" readonly style="font-family: monospace; white-space: pre; resize: vertical;" data-bind="value: yamlConfigMapPopup"></textarea>
                 </div>
-
-                <div class="col-xs-12">
-                    <input placeholder="{% trans 'Use bracketed node names like this: <node name>' %}" class="form-control input-lg widget-input" data-bind="textInput: map_popup.string_template">
+                <div class="col-xs-12" data-bind="visible: !yamlConfigLoading() && !hasYamlConfigMapPopup()">
+                    {% trans "Not yet configured" %}
                 </div>
             </div>
         </div>

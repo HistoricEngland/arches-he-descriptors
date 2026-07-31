@@ -8,15 +8,32 @@ from ..display_descriptor.service import (
     render_display_descriptor_for_resource,
     DisplayDescriptorService,
 )
+from .yaml_transform import DESCRIPTOR_TYPES, extract_yaml_section, merge_yaml_section
 import json
 import yaml
 from time import perf_counter
 
 
 def get_display_descriptor_graph_config(request, graph_id):
-    """Return graph-scoped YAML descriptor configuration for the function editor."""
+    """Return graph-scoped YAML descriptor configuration for the function editor.
+
+    Optional query param:
+    - descriptor_type=display_name|display_description|map_popup : return only that section
+    """
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    descriptor_type = request.GET.get("descriptor_type")
+    if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
+        return JsonResponse(
+            {
+                "error": (
+                    f"Invalid descriptor_type '{descriptor_type}'. "
+                    f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
+                )
+            },
+            status=400,
+        )
 
     row = (
         DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id)
@@ -25,13 +42,82 @@ def get_display_descriptor_graph_config(request, graph_id):
     )
 
     yaml_config = row.get("yaml_config") if row else None
+
+    if descriptor_type and yaml_config:
+        yaml_config = extract_yaml_section(yaml_config, descriptor_type)
+
     configured = isinstance(yaml_config, str) and yaml_config.strip() != ""
 
     return JsonResponse(
         {
             "graph_id": str(graph_id),
+            "descriptor_type": descriptor_type,
             "configured": configured,
             "yaml_config": yaml_config if configured else None,
+        }
+    )
+
+
+@csrf_exempt
+def save_display_descriptor_section(request, graph_id):
+    """Save a single descriptor-type section of the graph YAML config.
+
+    Usage: PATCH /api/display-descriptor/config/<graph_id>/section/
+    Body: {"descriptor_type": "display_name|display_description|map_popup", "yaml_config": "..."}
+    """
+    if request.method != "PATCH":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    descriptor_type = data.get("descriptor_type", "").strip()
+    section_yaml = data.get("yaml_config", "").strip()
+
+    if not descriptor_type:
+        return JsonResponse({"error": "descriptor_type is required"}, status=400)
+    if descriptor_type not in DESCRIPTOR_TYPES:
+        return JsonResponse(
+            {
+                "error": (
+                    f"Invalid descriptor_type '{descriptor_type}'. "
+                    f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
+                )
+            },
+            status=400,
+        )
+    if not section_yaml:
+        return JsonResponse({"error": "yaml_config is required"}, status=400)
+
+    from .yaml_transform import normalize_config_yaml_for_graph
+
+    try:
+        normalized = normalize_config_yaml_for_graph(section_yaml, graph_id)
+        yaml.safe_load(normalized)
+        section_yaml = normalized
+    except (ValueError, yaml.YAMLError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).first()
+    full_yaml = row.yaml_config if row else None
+    new_full_yaml = merge_yaml_section(full_yaml, section_yaml, descriptor_type)
+
+    if row:
+        row.yaml_config = new_full_yaml
+        row.save(update_fields=["yaml_config", "updated_at"])
+    else:
+        DisplayDescriptorGraphConfig.objects.create(
+            graph_id=graph_id,
+            yaml_config=new_full_yaml,
+        )
+
+    return JsonResponse(
+        {
+            "graph_id": str(graph_id),
+            "descriptor_type": descriptor_type,
+            "saved": True,
         }
     )
 
@@ -104,7 +190,7 @@ def _serialize_config_to_yaml(config_data):
     return yaml.safe_dump(config_data, sort_keys=False)
 
 
-def _get_graph_yaml_for_resource(resource_id):
+def _get_graph_yaml_for_resource(resource_id, descriptor_type=None):
     from arches.app.models.models import ResourceInstance
 
     resource = (
@@ -121,7 +207,11 @@ def _get_graph_yaml_for_resource(resource_id):
         .first()
     )
     yaml_config = row.get("yaml_config") if row else None
-    return yaml_config if isinstance(yaml_config, str) and yaml_config.strip() else None
+    if not isinstance(yaml_config, str) or not yaml_config.strip():
+        return None
+    if descriptor_type:
+        return extract_yaml_section(yaml_config, descriptor_type)
+    return yaml_config
 
 
 @csrf_exempt
@@ -134,6 +224,7 @@ def get_display_descriptor(request, resource_id):
     Body: {"config": {...}}  (config is optional)
 
     Optional query params:
+    - descriptor_type=display_name|display_description|map_popup : which section to render
     - descriptor_only=false|0|no|off : include input payload in response (POST only)
     - include_sql=true|1|yes|on : include captured SQL statements and timings
     - include_yaml=true|1|yes|on : include resolved YAML config string in response
@@ -147,13 +238,26 @@ def get_display_descriptor(request, resource_id):
         include_sql = _is_truthy(request.GET.get("include_sql"))
         include_yaml = _is_truthy(request.GET.get("include_yaml"))
         strict_sortorder = _is_truthy(request.GET.get("strict_sortorder"))
+        descriptor_type = request.GET.get("descriptor_type") or None
         _validate_sql_toggle(include_sql)
+
+        if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
+            return JsonResponse(
+                {
+                    "error": (
+                        f"Invalid descriptor_type '{descriptor_type}'. "
+                        f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
+                    )
+                },
+                status=400,
+            )
 
         if request.method == "GET":
             descriptor, sql_queries = _execute_with_sql_capture(
                 lambda: render_display_descriptor_for_resource(
                     resource_id,
                     strict_sortorder=strict_sortorder,
+                    descriptor_type=descriptor_type,
                 ),
                 include_sql=include_sql,
             )
@@ -162,7 +266,9 @@ def get_display_descriptor(request, resource_id):
                 payload = _add_yaml_metadata(
                     payload,
                     include_yaml=True,
-                    yaml_config=_get_graph_yaml_for_resource(resource_id),
+                    yaml_config=_get_graph_yaml_for_resource(
+                        resource_id, descriptor_type=descriptor_type
+                    ),
                     source="graph",
                 )
             return JsonResponse(
@@ -179,7 +285,9 @@ def get_display_descriptor(request, resource_id):
                 yaml_config = _serialize_config_to_yaml(config)
                 yaml_config_source = "request"
             else:
-                yaml_config = _get_graph_yaml_for_resource(resource_id)
+                yaml_config = _get_graph_yaml_for_resource(
+                    resource_id, descriptor_type=descriptor_type
+                )
                 yaml_config_source = "graph"
 
         service = DisplayDescriptorService()
@@ -189,6 +297,7 @@ def get_display_descriptor(request, resource_id):
                 strict_sortorder=strict_sortorder,
                 config_data=config,
                 return_config=True,
+                descriptor_type=descriptor_type,
             ),
             include_sql=include_sql,
         )
