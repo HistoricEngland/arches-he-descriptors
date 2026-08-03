@@ -38,6 +38,13 @@ details = {
 }
 
 
+_DESCRIPTOR_TYPE_MAP = {
+    "name": "display_name",
+    "description": "display_description",
+    "map_popup": "map_popup",
+}
+
+
 class ArchesHEDescriptors(AbstractPrimaryDescriptorsFunction):
     def get_primary_descriptor_from_nodes(self, resource, config, context=None, descriptor=None):
         language = "en"
@@ -50,11 +57,14 @@ class ArchesHEDescriptors(AbstractPrimaryDescriptorsFunction):
             except KeyError:
                 return None
 
+        descriptor_type = _DESCRIPTOR_TYPE_MAP.get(descriptor)
+
         try:
             descriptor_value = render_display_descriptor_for_resource(
                 resource_id=str(resource.resourceinstanceid),
                 language=language,
                 strict_sortorder=False,
+                descriptor_type=descriptor_type,
             )
         except ValueError as exc:
             logger.warning(

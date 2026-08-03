@@ -257,6 +257,22 @@ This endpoint is primarily for admin UI use but can be called programmatically f
 
 ## Configuration Format
 
+### Per-Descriptor-Type Sections
+
+When you need different configurations for the display name, display description, and map popup, store the config as a JSON object with three top-level keys:
+
+```json
+{
+  "display_name": "fields:\n  - name: Primary Reference Number\n...",
+  "display_description": "fields:\n  - name: Monument Name\n...",
+  "map_popup": "fields:\n  - name: Monument Type\n..."
+}
+```
+
+Each value is a complete YAML string for that descriptor type. Sections can be edited independently via the admin interface — the section picker in the editor lets you switch between `display_name`, `display_description`, and `map_popup`.
+
+If no per-type format is used (i.e. the config is plain YAML rather than a JSON object), the same config is used for all three descriptor types.
+
 ### Fields
 
 Define the fields your resources have:
@@ -268,6 +284,39 @@ fields:
     subfields:
       - Subfield 1
       - Subfield 2
+```
+
+#### Field Name Resolution
+
+By default, field names are matched against the **graph node name** (the label shown in the graph designer). Three alternative keys let you control how the name is resolved:
+
+| Key | Resolves against | Use when |
+|-----|-----------------|----------|
+| `name` or `g_name` | Graph node name | Node name is unique in the graph (default) |
+| `c_name` | Card/widget label | Multiple nodes share the same graph name but have distinct card labels |
+| `n_name` | Node alias | You want a stable, slug-style identifier that is guaranteed unique (e.g. `primary_reference_number`) |
+
+```yaml
+fields:
+  # Default: match by graph node name
+  - name: Primary Reference Number
+
+  # Explicit graph name (same as name:)
+  - g_name: Monument Name
+
+  # Match by card/widget label
+  - c_name: Site Name (preferred)
+
+  # Match by node alias — most stable, immune to label changes
+  - n_name: primary_reference_number
+```
+
+When the admin normalisation tool runs, it resolves these to the canonical node name and records the resolved nodeid in a comment so the config remains stable even if labels change later:
+
+```yaml
+fields:
+  - name: Primary Reference Number  # n_name: primary_reference_number | <uuid>
+    nodeid: <uuid>
 ```
 
 ### Rules
