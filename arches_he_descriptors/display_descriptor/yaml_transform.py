@@ -31,6 +31,18 @@ def _resolve_as_graph_name(
     return [], []
 
 
+def _resolve_as_node_alias(
+    raw_alias: str,
+    node_alias_index: Dict[str, List[Dict[str, str]]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    matches = node_alias_index.get(raw_alias, [])
+    if len(matches) == 1:
+        return matches, []
+    if len(matches) > 1:
+        return [], matches
+    return [], []
+
+
 def _resolve_as_card_label(
     raw_label: str,
     widget_label_index: Dict[str, List[Dict[str, str]]],
@@ -210,17 +222,23 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
 
     from arches.app.models.models import CardXNodeXWidget, Node
 
-    node_rows = Node.objects.filter(graph_id=graph_id).values("name", "nodeid")
+    node_rows = Node.objects.filter(graph_id=graph_id).values("name", "nodeid", "alias")
     node_name_index: Dict[str, List[Dict[str, str]]] = {}
+    node_alias_index: Dict[str, List[Dict[str, str]]] = {}
     for row in node_rows:
         name = _normalize_label(row["name"])
-        if not name:
-            continue
+        if name:
+            bucket = node_name_index.setdefault(name, [])
+            candidate = {"name": row["name"], "nodeid": str(row["nodeid"])}
+            if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
+                bucket.append(candidate)
 
-        bucket = node_name_index.setdefault(name, [])
-        candidate = {"name": row["name"], "nodeid": str(row["nodeid"])}
-        if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
-            bucket.append(candidate)
+        alias = _normalize_label(row["alias"])
+        if alias:
+            bucket = node_alias_index.setdefault(alias, [])
+            candidate = {"name": row["name"], "nodeid": str(row["nodeid"]), "alias": alias}
+            if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
+                bucket.append(candidate)
 
     label_rows = (
         CardXNodeXWidget.objects.filter(card__graph_id=graph_id)
@@ -261,6 +279,10 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                 mode = "c"
                 parent_match_key = "c_name"
                 field_name = _normalize_label(field.get("c_name"))
+            elif "n_name" in field:
+                mode = "n"
+                parent_match_key = "n_name"
+                field_name = _normalize_label(field.get("n_name"))
             elif "g_name" in field:
                 parent_match_key = "g_name"
                 field_name = _normalize_label(field.get("g_name"))
@@ -328,6 +350,29 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                     spec["alias"] = field_name
             else:
                 spec["comment"] = f"c_name: {field_name} | unresolved"
+        elif mode == "n":
+            single, ambiguous = _resolve_as_node_alias(field_name, node_alias_index)
+            single, ambiguous = _select_by_preferred_nodeid(
+                single,
+                ambiguous,
+                parent_preferred_nodeid,
+            )
+            if ambiguous:
+                spec["ambiguous_parent"] = [
+                    {
+                        "name": candidate["name"],
+                        "nodeid": candidate["nodeid"],
+                        "match_key": "n_name",
+                        "match_value": field_name,
+                    }
+                    for candidate in ambiguous
+                ]
+            elif single:
+                spec["resolved_name"] = single[0]["name"]
+                spec["nodeid"] = single[0]["nodeid"]
+                spec["comment"] = f"n_name: {field_name} | {single[0]['nodeid']}"
+            else:
+                spec["comment"] = f"n_name: {field_name} | unresolved"
         else:
             single, ambiguous = _resolve_as_graph_name(field_name, node_name_index)
             single, ambiguous = _select_by_preferred_nodeid(
@@ -396,6 +441,29 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                         sub_spec["alias"] = subfield
                 else:
                     sub_spec["comment"] = f"c_name: {subfield} | unresolved"
+            elif mode == "n":
+                single, ambiguous = _resolve_as_node_alias(subfield, node_alias_index)
+                single, ambiguous = _select_by_preferred_nodeid(
+                    single,
+                    ambiguous,
+                    subfield_preferred_nodeid,
+                )
+                if ambiguous:
+                    sub_spec["ambiguous"] = [
+                        {
+                            "name": candidate["name"],
+                            "nodeid": candidate["nodeid"],
+                            "match_key": "n_name",
+                            "match_value": subfield,
+                        }
+                        for candidate in ambiguous
+                    ]
+                elif single:
+                    sub_spec["resolved_name"] = single[0]["name"]
+                    sub_spec["nodeid"] = single[0]["nodeid"]
+                    sub_spec["comment"] = f"n_name: {subfield} | {single[0]['nodeid']}"
+                else:
+                    sub_spec["comment"] = f"n_name: {subfield} | unresolved"
             else:
                 single, ambiguous = _resolve_as_graph_name(subfield, node_name_index)
                 single, ambiguous = _select_by_preferred_nodeid(
