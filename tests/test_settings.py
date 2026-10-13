@@ -37,7 +37,7 @@ DATABASES = {
         "AUTOCOMMIT": True,
         "CONN_MAX_AGE": 0,
         "ENGINE": "django.contrib.gis.db.backends.postgis",
-        "HOST": "localhost",
+        "HOST": os.environ.get("PGHOST", "localhost"),
         "NAME": "arches_he_descriptors",
         "OPTIONS": {},
         "PASSWORD": "postgis",
@@ -66,6 +66,9 @@ ELASTICSEARCH_PREFIX = "test"
 TEST_RUNNER = "arches.test.runner.ArchesTestRunner"
 SILENCED_SYSTEM_CHECKS.append(
     "arches.W001",  # Cache backend does not support rate-limiting
+)
+SILENCED_SYSTEM_CHECKS.append(
+    "arches.E001",  # Dummy cache is used intentionally in the test settings
 )
 
 ELASTICSEARCH_HOSTS = [

@@ -4,6 +4,7 @@ USER root
 ## Build Args
 ARG PROJ_NAME=project
 ARG ARCHES_PATH=./arches
+ARG APP_PATH=./arches_he_descriptors
 ARG DOCKER_PATH=./docker
 
 ## Setting default environment variables
@@ -77,11 +78,18 @@ RUN rm -rf /root/.cache/pip/*
 COPY $ARCHES_PATH ${ARCHES_ROOT}
 RUN chmod +x ${ARCHES_ROOT}/arches/install/arches_admin.py
 
+COPY $APP_PATH ${APP_ROOT}
+
 # From here, run commands from ARCHES_ROOT
 WORKDIR ${ARCHES_ROOT}
 
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install -e '.[dev]'
+
+# Install the Arches project package and its dependencies.
+WORKDIR ${APP_ROOT}
+RUN pip install -e '.[dev]'
+
 RUN pre-commit install
 
 COPY $DOCKER_PATH/entrypoint.sh /entrypoint.sh
