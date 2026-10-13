@@ -1,6 +1,7 @@
 import yaml
+import json
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 UUID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
@@ -23,6 +24,18 @@ def _resolve_as_graph_name(
     node_name_index: Dict[str, List[Dict[str, str]]],
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     matches = node_name_index.get(raw_name, [])
+    if len(matches) == 1:
+        return matches, []
+    if len(matches) > 1:
+        return [], matches
+    return [], []
+
+
+def _resolve_as_node_alias(
+    raw_alias: str,
+    node_alias_index: Dict[str, List[Dict[str, str]]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    matches = node_alias_index.get(raw_alias, [])
     if len(matches) == 1:
         return matches, []
     if len(matches) > 1:
@@ -204,21 +217,28 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
 
     fields_data = data.get("fields")
     if not isinstance(fields_data, list):
-        return yaml.safe_dump(data, sort_keys=False, allow_unicode=False)
+        # Nothing to normalise — return the original string to preserve formatting and quotes
+        return yaml_config or ""
 
     from arches.app.models.models import CardXNodeXWidget, Node
 
-    node_rows = Node.objects.filter(graph_id=graph_id).values("name", "nodeid")
+    node_rows = Node.objects.filter(graph_id=graph_id).values("name", "nodeid", "alias")
     node_name_index: Dict[str, List[Dict[str, str]]] = {}
+    node_alias_index: Dict[str, List[Dict[str, str]]] = {}
     for row in node_rows:
         name = _normalize_label(row["name"])
-        if not name:
-            continue
+        if name:
+            bucket = node_name_index.setdefault(name, [])
+            candidate = {"name": row["name"], "nodeid": str(row["nodeid"])}
+            if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
+                bucket.append(candidate)
 
-        bucket = node_name_index.setdefault(name, [])
-        candidate = {"name": row["name"], "nodeid": str(row["nodeid"])}
-        if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
-            bucket.append(candidate)
+        alias = _normalize_label(row["alias"])
+        if alias:
+            bucket = node_alias_index.setdefault(alias, [])
+            candidate = {"name": row["name"], "nodeid": str(row["nodeid"]), "alias": alias}
+            if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
+                bucket.append(candidate)
 
     label_rows = (
         CardXNodeXWidget.objects.filter(card__graph_id=graph_id)
@@ -259,6 +279,10 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                 mode = "c"
                 parent_match_key = "c_name"
                 field_name = _normalize_label(field.get("c_name"))
+            elif "n_name" in field:
+                mode = "n"
+                parent_match_key = "n_name"
+                field_name = _normalize_label(field.get("n_name"))
             elif "g_name" in field:
                 parent_match_key = "g_name"
                 field_name = _normalize_label(field.get("g_name"))
@@ -326,6 +350,29 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                     spec["alias"] = field_name
             else:
                 spec["comment"] = f"c_name: {field_name} | unresolved"
+        elif mode == "n":
+            single, ambiguous = _resolve_as_node_alias(field_name, node_alias_index)
+            single, ambiguous = _select_by_preferred_nodeid(
+                single,
+                ambiguous,
+                parent_preferred_nodeid,
+            )
+            if ambiguous:
+                spec["ambiguous_parent"] = [
+                    {
+                        "name": candidate["name"],
+                        "nodeid": candidate["nodeid"],
+                        "match_key": "n_name",
+                        "match_value": field_name,
+                    }
+                    for candidate in ambiguous
+                ]
+            elif single:
+                spec["resolved_name"] = single[0]["name"]
+                spec["nodeid"] = single[0]["nodeid"]
+                spec["comment"] = f"n_name: {field_name} | {single[0]['nodeid']}"
+            else:
+                spec["comment"] = f"n_name: {field_name} | unresolved"
         else:
             single, ambiguous = _resolve_as_graph_name(field_name, node_name_index)
             single, ambiguous = _select_by_preferred_nodeid(
@@ -394,6 +441,29 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                         sub_spec["alias"] = subfield
                 else:
                     sub_spec["comment"] = f"c_name: {subfield} | unresolved"
+            elif mode == "n":
+                single, ambiguous = _resolve_as_node_alias(subfield, node_alias_index)
+                single, ambiguous = _select_by_preferred_nodeid(
+                    single,
+                    ambiguous,
+                    subfield_preferred_nodeid,
+                )
+                if ambiguous:
+                    sub_spec["ambiguous"] = [
+                        {
+                            "name": candidate["name"],
+                            "nodeid": candidate["nodeid"],
+                            "match_key": "n_name",
+                            "match_value": subfield,
+                        }
+                        for candidate in ambiguous
+                    ]
+                elif single:
+                    sub_spec["resolved_name"] = single[0]["name"]
+                    sub_spec["nodeid"] = single[0]["nodeid"]
+                    sub_spec["comment"] = f"n_name: {subfield} | {single[0]['nodeid']}"
+                else:
+                    sub_spec["comment"] = f"n_name: {subfield} | unresolved"
             else:
                 single, ambiguous = _resolve_as_graph_name(subfield, node_name_index)
                 single, ambiguous = _select_by_preferred_nodeid(
@@ -461,6 +531,7 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                 and stripped
                 and not line.startswith(" ")
                 and not line.startswith("\t")
+                and not stripped.startswith("- ")  # unindented list items are still inside fields
             ):
                 # Found next top-level key, add everything from here
                 remaining = original_lines[i:]
@@ -471,3 +542,86 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
 
     result = "\n".join(lines).rstrip() + "\n"
     return result
+
+
+DESCRIPTOR_TYPES = ("display_name", "display_description", "map_popup")
+
+
+def _load_json_sections(full_str: str) -> Optional[Dict[str, str]]:
+    """Return the parsed JSON sections dict if full_str is in JSON-sections format, else None."""
+    s = full_str.strip() if full_str else ""
+    if not (s.startswith("{") and s.endswith("}")):
+        return None
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return {k: v for k, v in parsed.items() if isinstance(v, str)}
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def extract_yaml_section(full_yaml_str: str, descriptor_type: str) -> Optional[str]:
+    """Extract a single descriptor-type section from the combined config.
+
+    Supports both the current JSON-sections format and the legacy YAML format.
+    Returns the raw section YAML string or None if the section is absent.
+    """
+    if not full_yaml_str:
+        return None
+
+    # Current format: JSON dict of raw YAML strings
+    sections = _load_json_sections(full_yaml_str)
+    if sections is not None:
+        return sections.get(descriptor_type)
+
+    # Legacy YAML format (backward compat)
+    try:
+        data = yaml.safe_load(full_yaml_str)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    # Legacy flat format: top-level 'fields' key is a pre-migration single-section config
+    if "fields" in data:
+        return full_yaml_str if descriptor_type == "display_name" else None
+
+    section = data.get(descriptor_type)
+    if not isinstance(section, dict):
+        return None
+    # Unavoidable round-trip for old YAML multi-section format
+    return yaml.safe_dump(section, sort_keys=False)
+
+
+def merge_yaml_section(
+    full_yaml_str: Optional[str], section_yaml_str: str, descriptor_type: str
+) -> str:
+    """Replace or insert a descriptor-type section in the combined config.
+
+    Stores sections as a JSON dict of raw YAML strings to preserve user formatting.
+    Migrates legacy YAML formats on first write.
+    """
+    sections: Dict[str, str] = {}
+
+    if full_yaml_str:
+        existing = _load_json_sections(full_yaml_str)
+        if existing is not None:
+            sections = existing
+        else:
+            # Migrate legacy YAML format
+            try:
+                data = yaml.safe_load(full_yaml_str)
+                if isinstance(data, dict):
+                    if "fields" in data:
+                        sections["display_name"] = full_yaml_str
+                    else:
+                        for dt in DESCRIPTOR_TYPES:
+                            if dt in data:
+                                sections[dt] = yaml.safe_dump(data[dt], sort_keys=False)
+            except yaml.YAMLError:
+                pass
+
+    sections[descriptor_type] = section_yaml_str
+    return json.dumps(sections)
+
