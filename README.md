@@ -1,7 +1,10 @@
 # Arches HE Descriptors
 
-An Arches extension for generating Historic England resource display names,
-descriptions and map popups from graph-specific YAML rules.
+An Arches extension for generating resource display names, descriptions and map
+popups from graph-specific YAML rules.
+
+Any organisation can configure it to suit its resource models, terminology and
+descriptor policies; it is not limited to Historic England data or workflows.
 
 ## Why use this?
 

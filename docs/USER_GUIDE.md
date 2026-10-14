@@ -3,7 +3,9 @@
 [Back to README](../README.md) |
 [Implementation and API reference](./IMPLEMENTATION_GUIDE.md)
 
-Use this guide to author graph-specific YAML. First complete the
+Use this guide to author graph-specific YAML for your organisation's resource
+models and descriptor policies. The Monument recipes illustrate the approach;
+they do not restrict it to that model or vocabulary. First complete the
 [installation and function assignment](../README.md#integrating-into-an-existing-arches-project).
 
 ## Managing configurations
