@@ -1,333 +1,253 @@
 # Arches HE Descriptors
 
-This is an Arches extension app that provides descriptor functions used by Historic England for use with their Arches-based heritage inventory systems.
+An Arches extension for generating Historic England resource display names,
+descriptions and map popups from graph-specific YAML rules.
+
+## Documentation
+
+Start here for installation and integration. Each supporting document owns a
+different topic:
+
+| Document | Use it for |
+| --- | --- |
+| [Configuration guide](./docs/USER_GUIDE.md) | Admin workflow, YAML fields, rules, filters, operations and examples |
+| [Implementation guide](./docs/IMPLEMENTATION_GUIDE.md) | Service internals, API contracts, limitations and testing |
 
 ## Requirements
 
-- Python 3.10+ (Check the Arches python requirements and match your Python version)
-- Arches >=7.6.17, <7.7.0
+- Python >=3.10, subject to the supported Python versions of your Arches release.
+- Arches >=7.6.17, <7.7.0.
+- The database, search services and front-end tooling required by your Arches
+  project.
 
-## Running Tests
+These package constraints come from [pyproject.toml](./pyproject.toml); they are
+not a claim that every newer Python release has been tested.
 
-The descriptor unit tests cover configuration parsing, rendering rules and
-transformations. A graph-backed test imports the Arches `Resource Test Model`,
-attaches the HE descriptor function, writes tile data, and verifies the generated
-resource descriptor. Run them inside the application container:
+## Integrating into an existing Arches project
 
-```bash
-docker exec archeshedescriptors sh -lc 'cd /web_root/arches_he_descriptors && python manage.py test --noinput --verbosity=2 --settings=arches_he_descriptors.tests.settings arches_he_descriptors.tests.test_display_descriptor_operations arches_he_descriptors.tests.test_display_descriptor_engine arches_he_descriptors.tests.test_display_descriptor_service arches_he_descriptors.tests.test_display_descriptor_graph'
-```
+Run management commands from the host project's directory containing
+`manage.py`, using its environment and settings.
 
-There are two test locations, which must be run in separate invocations:
+### 1. Install the package
 
-- [App tests](arches_he_descriptors/tests/) contain operations, engine, service and
-  graph regression tests. Their settings expect an Arches checkout alongside this
-  project (`../arches`, mounted at `/web_root/arches` in Docker), providing the core
-  `tests.base_test` helpers.
-- [Project function tests](tests/function_tests/) contain Monument fixture,
-  graph setup and resource/function integration tests. They use the project's
-  own `tests` package. Combining both groups under one settings module can cause
-  a collision with the core Arches `tests` package.
+#### From PyPI
 
-Run the two groups sequentially: their database-backed tests use the same default
-test database name. PostgreSQL/PostGIS must be available for database-backed
-tests, and Elasticsearch must also be available for the Monument test runner.
-Use `tests.test_settings_for_docker` for Monument tests inside Docker; the
-non-Docker `tests.test_settings` explicitly uses Elasticsearch on `localhost`,
-which is not the separate Elasticsearch container.
-
-Current coverage is **64 test methods**, excluding individual `subTest` cases:
-
-| Module | Test methods |
-| --- | ---: |
-| [Operations](arches_he_descriptors/tests/test_display_descriptor_operations.py) | 13 |
-| [Engine](arches_he_descriptors/tests/test_display_descriptor_engine.py) | 13 |
-| [Service](arches_he_descriptors/tests/test_display_descriptor_service.py) | 6 |
-| [Graph regressions](arches_he_descriptors/tests/test_display_descriptor_graph.py) | 3 |
-| [Graph fixture preparation](tests/function_tests/test_graph_fixture.py) | 7 |
-| [Monument graph setup](tests/function_tests/test_monument_graph_setup.py) | 3 |
-| [Monument resource/function integration](tests/function_tests/test_monument_resource_setup.py) | 19 |
-| **Total** | **64** |
-
-HTTP API endpoint tests have not yet been added. The service and function tests
-do not verify URL routing, HTTP status codes or JSON response contracts.
-
-Operation tests live in
-[test_display_descriptor_operations.py](arches_he_descriptors/tests/test_display_descriptor_operations.py),
-separate from engine rule/filter tests. They cover every `OperationType` and
-assert that the example cases and dispatch handlers match the enum, plus option,
-missing-value and length-boundary cases. Engine tests cover missing/default values,
-subfield agreement/ambiguity, priority fallback and combined subfield filters.
-These unit tests do not load St Bernard's or require a database.
-Run just the operation tests with:
+Install Arches HE Descriptors from
+[PyPI](https://pypi.org/project/arches-he-descriptors/) into your host project's
+Python environment:
 
 ```bash
-docker exec archeshedescriptors sh -lc 'cd /web_root/arches_he_descriptors && python manage.py test --noinput --verbosity=2 --settings=arches_he_descriptors.tests.settings arches_he_descriptors.tests.test_display_descriptor_operations'
+python -m pip install arches-he-descriptors
 ```
 
-The Monument graph setup tests load CIDOC CRM and the required photo widget,
-register Arches HE Descriptors, and prepare a descriptor-only copy of the
-Arches 6.2 graph export for Arches 7.6 before importing and publishing it.
-Graph/card text and widget labels are converted to language-keyed objects
-(for example, `{"en": "Monument"}`), preserving existing translations and nulls.
-Node names remain plain strings, as required by Arches 7.6.
-The three source-specific non-descriptor functions and the unsupported
-`bngcentrepoint` nodegroup (including its card, widget, and incident edges)
-are explicitly excluded; the source JSON is not modified.
-The source-specific report template and configuration are replaced with the
-built-in default report template and an empty report configuration.
-The source HE primary descriptor assignment is replaced with Arches HE Descriptors.
-The original descriptor nodegroups and templates are preserved, and HE name
-rendering is enabled with `show_prn=True`. Tests that exercise rendering must also
-provide resource tiles and a `DisplayDescriptorGraphConfig`.
+If the host project manages dependencies in `pyproject.toml`, add the package to
+its existing `[project]` dependencies and install using the project's normal
+dependency workflow:
+
+```toml
+dependencies = [
+    # Keep the project's existing dependencies.
+    "arches-he-descriptors",
+]
+```
+
+For reproducible deployments, pin a published version using
+`arches-he-descriptors==<published-version>`, replacing the placeholder with your
+chosen release. The distribution name is `arches-he-descriptors`; the Python
+module and Django application name remain `arches_he_descriptors`.
+
+Installing the package does not configure the host project, apply migrations or
+register the function. Continue with steps 2-6 below.
+
+#### From a local checkout or Git
+
+For development or installing directly from source, use a local checkout:
 
 ```bash
-docker exec archeshedescriptors sh -lc 'cd /web_root/arches_he_descriptors && python manage.py test --noinput --verbosity=2 --settings=tests.test_settings_for_docker tests.function_tests'
+pip install -e /path/to/arches_he_descriptors
 ```
 
-These tests use a separate Django test database; they do not depend on functions
-registered manually in the application database.
-They do not test the excluded spatial functions or Generate Unique References.
+Alternatively, add a Git dependency to the host project's `[project]`
+dependencies, selecting a branch, tag or preferably a commit you have verified:
 
-The Monument resource setup tests also load the saved
-[St Bernard's bulk disambiguated API response](tests/fixtures/pkg/business_data/st_bernards_monument.bulk_disambiguated.json)
-after publishing the graph. The first-pass
-[fixture loader](tests/function_tests/resource_fixture.py) creates one resource
-with its 13 names, four descriptions and system identifiers. Strings use Arches
-7.6 English tile values (`{"en": {"value": "...", "direction": "ltr"}}`), and the
-primary reference number is numeric. Source resource/tile IDs and legacy ID are
-retained. Tile sortorder is assigned from the saved arrays, starting at zero per
-section; this is deterministic test ordering, not recovered source sortorder.
-
-The shared Monument test setup loads the offline Django fixture
-[st_bernards_concepts.json](tests/fixtures/pkg/reference_data/st_bernards_concepts.json)
-before graph import/resource creation. It contains the 11 concept values populated
-in the loaded sections and their five collections: Name Use Type, Currency Type,
-Description Type, Languages and Metatypes. Source concept/value/collection IDs and
-English preferred labels are retained. Membership was checked against the source
-instance's public collection endpoints; relation IDs are test-local, and legacy
-concept identifiers use the concept UUIDs rather than unknown source legacy IDs.
-This is a minimal test subset, not a full vocabulary or concept-scheme export.
-
-The resource loader stores concept **value** UUIDs, leaving unpopulated concept
-fields null, and verifies loaded value metadata and collection membership before
-creating records. Missing or inconsistent vocabulary raises an explicit error.
-All other resource sections are still omitted and listed in the loader result;
-no related resources are created. Tests do not contact the source St Bernard's
-Arches instance; the saved fixtures are used offline. Database-backed tests still
-connect to PostgreSQL, and the Monument runner creates and deletes test search
-indices in Elasticsearch.
-The loader writes ResourceInstance/TileModel records atomically and rejects
-duplicate loads; it does not run Resource/Tile save hooks, index the resource, or
-copy source display descriptors. It is test scaffolding, not a general API-data
-importer. The saved API response is left unchanged.
-The resource tests attach a `DisplayDescriptorGraphConfig` for the first Primary
-name (falling back to the first name) and primary reference number, then call
-`Resource.save_descriptors` through the registered HE function and verify the
-generated name is persisted. Service tests also exercise description priority
-`Summary|Full|FIRST` against real concept-backed tiles. Description priority is
-tested with an inline service configuration, not the function's description path.
-Rule-order tests verify two required name-use subfield filters fail before the
-third rule succeeds, including subfield alias formatting and transformation.
-Another test verifies every filtered rule fails before a final catch-all block
-(`{"rule": [], "format": "Monument: no matching name use type"}`) supplies the
-descriptor. Both scenarios verify the name is persisted through the installed
-HE function.
-
-The fixture preparation tests can also run without Django or a database:
-
-```bash
-python -m unittest tests.function_tests.test_graph_fixture
+```toml
+dependencies = [
+    # Keep the project's existing dependencies.
+    "arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@<verified-ref>",
+]
 ```
 
-## Installing for Development
+Replace `<verified-ref>` before installing. Keep the host's Arches version within
+the [requirements](#requirements); do not lower dependency constraints merely to
+make an incompatible environment install.
 
-For development purposes, you can treat this app as a standard Arches project. Either use the instructions for developing an Arches project or use the arches-containers configuration included in this repository.
+### 2. Configure application discovery
 
-- **For development (standard):**
+Add `arches_he_descriptors` to the existing `INSTALLED_APPS` and
+`ARCHES_APPLICATIONS` collections. Preserve all existing entries.
 
-  ```bash
-  pip install -e '/path/to/arches_he_descriptors[dev]'
-  ```
-
-  This installs the app in editable mode, allowing you to make changes and see them reflected immediately without needing to reinstall.
-
-- **For development using included arches-container configuration:**
-
-  > arches-containers is a tool developed by Historic England to enable the quick set up of development environments.  You can find out more about arches-containers and how to install and use it, please see the [arches-containers documentation on PyPI](https://pypi.org/project/arches-containers/)
-
-  Please ensure that you clone the arches-he-descriptors repository into a directory that uses underscores instead of hyphens, as the arches-containers configuration expects this format. For example, clone it to `arches_he_descriptors`.
-
-    ```bash
-    git clone https://github.com/HistoricEngland/arches-he-descriptors.git arches_he_descriptors
-    ```
-
-  This repository includes an `arches-containers` project configuration, so you can import, activate, and start the system as follows:
-
-  1. Ensure Docker is installed and running.
-  2. Navigate to your workspace directory (the root where your projects and containers live).
-  3. Import the arches-container project configuration:
-
-     ```bash
-     act import -p arches_he_descriptors
-     ```
-
-  4. Activate the project:
-
-     ```bash
-     act activate -p arches_he_descriptors
-     ```
-
-  5. Start the system:
-
-     ```bash
-     act up
-     ```
-
-  6. Once setup and webpack builds are complete, open a browser and navigate to `http://localhost:8002` or use `act view` in a terminal to open the project in your default browser.
-
-## Using This App in Your Arches Project
-
-While you can use Arches HE Descriptors as a standalone app, you may wish to use it as part of an Arches Project.  The following steps explain how to do this:
-
-### 1. Add to `your_project/pyproject.toml`
-
-  Add the following to your `pyproject.toml` dependencies (in the `[project]` section):
-
-  ```toml
-  arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@release/1.0.x
-  ```
-
-  Example:
-
-  ```toml
-  dependencies = [
-      "arches==7.6.17",
-      "arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@release/1.0.x",
-  ]
-  ```
-
-### 2. Update `your_project/your_project/settings.py`
-
-Add to `INSTALLED_APPS` and `ARCHES_APPLICATIONS`:
+Append the package locations to the existing Arches settings:
 
 ```python
-INSTALLED_APPS = (
-    # Keep all existing installed applications.
-    ...
-    "your_project",
-    "arches_he_descriptors",
-)
-ARCHES_APPLICATIONS = (
-    # Keep all existing Arches applications.
-    ...
-    "arches_he_descriptors",
-)
+DATATYPE_LOCATIONS.append("arches_he_descriptors.datatypes")
+FUNCTION_LOCATIONS.append("arches_he_descriptors.functions")
+SEARCH_COMPONENT_LOCATIONS.append("arches_he_descriptors.search_components")
 ```
 
-The ellipses represent your existing entries, not literal Python values to add.
-Do not replace an existing `ARCHES_APPLICATIONS` list or tuple with only this app.
+### 3. Include the URLs before catch-all routes
 
-### 3. Run Database Migrations
+In the host project's URL configuration, add:
 
-Run the following command to apply any database migrations required by this app:
+```python
+path("", include("arches_he_descriptors.urls")),
+```
 
-> if using the arches-containers, run this in the application container
+Import `path` and `include` from `django.urls`. Place this include before any
+catch-all application include: otherwise descriptor API requests can be
+intercepted by that application.
+
+The package URL configuration also includes Arches core URLs. Check the host's
+include ordering rather than assuming this is a descriptor-only URL module.
+The registered endpoints are documented in the
+[API reference](./docs/IMPLEMENTATION_GUIDE.md#api-reference).
+
+### 4. Apply migrations and register the function
 
 ```bash
 python manage.py migrate
-```
-
-### 4. Register and Assign the Function
-
-Migrations create the descriptor configuration table; they do not register the
-Arches function. From your project's management-command directory, run:
-
-```bash
-python manage.py fn register --source /path/to/arches_he_descriptors/functions/arches_he_descriptors.py
+python manage.py fn register --source /path/to/arches_he_descriptors/arches_he_descriptors/functions/arches_he_descriptors.py
 python manage.py fn list
 ```
 
-Replace the source path with the installed app's function file. In this project's
-Docker container, the registration command is:
+Adjust the registration path to the checkout or installed package. For a PyPI
+installation, locate the function file using the same Python environment as the
+host project:
+
+```bash
+python -c "import arches_he_descriptors; from pathlib import Path; print(Path(arches_he_descriptors.__file__).parent / 'functions' / 'arches_he_descriptors.py')"
+```
+
+Use the printed absolute path as the registration command's `--source` argument.
+In this repository's application container, the checkout path is:
 
 ```bash
 python manage.py fn register --source /web_root/arches_he_descriptors/arches_he_descriptors/functions/arches_he_descriptors.py
 ```
 
-Confirm that `Arches HE Descriptors` appears in the list. In the Arches graph
-designer, assign it to the target resource model as its primary descriptor
-function, replacing the existing primary descriptor assignment. Keep exactly one
-primary descriptor function assigned to that graph.
+Migrations create the configuration table; they do not register the Arches
+function. Confirm that **Arches HE Descriptors** appears in the function list.
 
-### 5. Configure Descriptor Rendering
+### 5. Assign and configure descriptors
 
-Create a graph-specific
-[`DisplayDescriptorGraphConfig`](arches_he_descriptors/models.py) record using
-the Django admin's **Display descriptor graph configs** page. Select the target
-graph and enter YAML describing its fields and ordered rendering rules.
+In the graph designer, assign **Arches HE Descriptors** as the resource model's
+primary descriptor function, replacing the previous primary descriptor
+assignment. Keep exactly one primary descriptor function assigned.
 
-For the supplied Monument graph, a name configuration is:
+Create the graph's configuration in Django admin under **Display descriptor
+graph configs**, following the
+[admin workflow](./docs/USER_GUIDE.md#managing-configurations).
+Use the [Monument example](./docs/USER_GUIDE.md#monument-name-example) as a starting
+point, adapting it to the destination graph and vocabulary.
 
-```yaml
-fields:
-  - name: Monument Name
-    subfields:
-      - name: Monument Name Use Type
-        alias: NameUse
-  - name: Primary Reference Number
-display_descriptor_rules:
-  - rule:
-      - name: Monument Name
-        field_filters:
-          NameUse: "Primary|FIRST"
-        operations:
-          - first
-      - name: Primary Reference Number
-    format: "[{Primary Reference Number}] {Monument Name}"
-```
+For display names, turn on **Enabled** in the function's Display Name tab.
+Internally this is `descriptor_types.name.show_prn=True`: it enables YAML
+rendering, rather than automatically adding a primary reference number.
+The YAML format decides whether a reference number appears. When this flag is
+explicitly `False`, the function returns the existing stored name.
 
-Adapt field names to your graph. Each subfield must belong to the same nodegroup
-as its parent field, and populated concept fields must reference valid concept
-value UUIDs in the destination database.
+The function maps Arches `name`, `description` and `map_popup` to the
+`display_name`, `display_description` and `map_popup` configuration sections.
+See [section storage](./docs/USER_GUIDE.md#descriptor-sections) and
+[function behaviour](./docs/IMPLEMENTATION_GUIDE.md#arches-function-behaviour),
+including the `Undefined` fallback.
 
-For the function's **name** descriptor configuration, enable `show_prn=True`.
-In the current implementation, this flag enables the YAML-backed name-rendering
-path; the reference number is included by the YAML format, not automatically
-prefixed by the flag. With `show_prn=False`, the function returns the existing
-stored name instead. Missing configuration or an empty rendered result produces
-`Undefined` when YAML-backed name rendering is enabled.
+Publish the graph after configuring its function assignment. Saving YAML does
+not regenerate stored resource descriptors. Regenerate existing descriptors
+through the host project's Arches workflow; the name integration tests exercise
+`Resource.save_descriptors(descriptors=("name",))`.
 
-Publish the graph after configuring its function assignment. Existing resources
-need descriptor regeneration to reflect configuration changes; saving the YAML
-alone does not regenerate their stored names. The name integration tests verify
-this through `Resource.save_descriptors(descriptors=("name",))`.
+### 6. Build and start the host project
 
-The description priority example `Summary|Full|FIRST` is currently verified
-through the service with inline configuration; it is not a separate
-description-specific function configuration demonstrated by these tests.
-
-### 6. Install and Build Front-End Dependencies
-
-From the directory containing your `your_project/package.json`:
-
-> if using arches-containers, run this in the application container or restart the webpack
+Use the host project's normal front-end build and deployment workflow. If it
+provides the same development scripts as this repository:
 
 ```bash
 npm install
 npm run build_development
-```
-
-### 7. Start Your Arches Project
-
-```bash
 python manage.py runserver
 ```
 
-## License
+Run the npm commands in the directory containing the host's `package.json`.
+`runserver` is for development, not production deployment. See the
+[Arches deployment documentation](https://arches.readthedocs.io/en/stable/deployment/)
+and the [API deployment caveats](./docs/IMPLEMENTATION_GUIDE.md#deployment-caveats).
 
-This project is licensed under the GNU AGPLv3. See the LICENSE file for details.
+### Docker integration
 
----
+For an existing containerised project, install the package in the image and
+mount its checkout into each service that needs it (application, livereload and
+webpack). Adapt service names and paths to your compose layout; the former
+Mariner-specific instructions are consolidated here.
 
-For more information on deploying your Arches project, see the [Arches Deployment Guide](https://arches.readthedocs.io/en/stable/deployment/).
+For a build context containing the checkout, a Dockerfile can include:
+
+```dockerfile
+ARG ARCHES_HE_DESCRIPTORS_PATH=./arches_he_descriptors
+COPY ${ARCHES_HE_DESCRIPTORS_PATH} /web_root/arches_he_descriptors
+RUN pip install -e '/web_root/arches_he_descriptors[dev]'
+```
+
+For development, the corresponding compose volume is:
+
+```yaml
+volumes:
+  - ../../arches_he_descriptors:/web_root/arches_he_descriptors
+```
+
+The source path is relative to the compose file. Rebuild the image after changing
+its installation steps, then run migrations and function registration inside the
+host application container as described above.
+
+## Developing this repository
+
+You can develop this repository as an Arches project, or install it in editable
+mode in an existing development environment:
+
+```bash
+pip install -e '/path/to/arches_he_descriptors[dev]'
+```
+
+### Included arches-containers configuration
+
+The [.ac_arches_he_descriptors configuration](./.ac_arches_he_descriptors/)
+expects the checkout directory to use underscores:
+
+```bash
+git clone https://github.com/HistoricEngland/arches-he-descriptors.git arches_he_descriptors
+```
+
+Install Docker and
+[arches-containers](https://pypi.org/project/arches-containers/), then run from
+the workspace containing the checkout:
+
+```bash
+act import -p arches_he_descriptors
+act activate -p arches_he_descriptors
+act up
+```
+
+Review the configuration's sibling checkout/data mounts and Arches branch before
+starting; provide those directories and keep the selected Arches version within
+the package constraints. Once setup and webpack builds finish, open
+<http://localhost:8002> or run `act view`.
+
+## Testing
+
+See [Running tests](./docs/IMPLEMENTATION_GUIDE.md#running-tests) for commands,
+environment requirements, coverage boundaries and the offline Monument fixtures.
+The app and project function suites must run separately and sequentially.
+
+## Licence
+
+The project includes the GNU Affero General Public License version 3 in
+[LICENSE](./LICENSE).
