@@ -76,7 +76,10 @@ Without an alias, use the graph node name. Simple fields and subfields can also
 be declared as strings.
 
 All extracted nodes must exist in the selected graph. Each subfield must share
-its parent's nodegroup so values can be paired within one tile.
+its parent's nodegroup so values can be paired within one tile. Separate parent
+fields can come from different cards/nodegroups and contribute to the same rule.
+When two values must describe the same repeated row, declare one as a subfield
+of the other rather than selecting them independently.
 Concept tile values must reference concept **value UUIDs**, not concept UUIDs;
 filters normally compare their resolved text labels.
 
@@ -116,6 +119,74 @@ normalisation can emit that key.
 If the normaliser marks ambiguous candidates with `**`, retain the intended
 candidate using its UUID comment, remove unwanted candidates and the markers,
 then save again.
+
+#### Resolving a card label that is not a node name
+
+If a saved field declaration is marked `# unresolved`, first check spelling and
+the selected graph. Then check whether the text is a card/widget label rather
+than the graph node name.
+
+In the supplied Monument graph, the widget label **Confidence of Interpretation
+Metatype** belongs to the node named **Phase Certainty Metatype**. Declaring it
+with `name: Confidence of Interpretation Metatype` will not find that node.
+Instead, enter:
+
+```yaml
+fields:
+  - c_name: Confidence of Interpretation Metatype
+```
+
+On **Save and continue editing**, normalisation produces:
+
+```yaml
+fields:
+  - name: Phase Certainty Metatype  # c_name: Confidence of Interpretation Metatype | 77e90835-efdc-11eb-91d3-a87eeabdefba
+    nodeid: 77e90835-efdc-11eb-91d3-a87eeabdefba
+    alias: Confidence of Interpretation Metatype
+```
+
+When a resolved card label differs from the node name and no explicit YAML alias
+was supplied, the normaliser adds that label as the alias. Rules and format
+placeholders can therefore keep using `Confidence of Interpretation Metatype`.
+An explicit `alias` takes precedence. The UUID above is specific to the supplied
+graph; let normalisation resolve the node in your own graph.
+
+#### Using two parent nodes with the same name
+
+Distinct cards can contain nodes both named `Comment`. Give each declaration
+the correct `nodeid` and a different YAML alias so extraction does not put both
+values under the same key:
+
+```yaml
+fields:
+  - name: Comment
+    nodeid: a681260a-4288-11ef-a05d-0242ac120006
+    alias: First Comment
+  - name: Comment
+    nodeid: a89c74c0-b530-11ee-99ce-0242ac120006
+    alias: Second Comment
+display_descriptor_rules:
+  - rule:
+      - name: First Comment
+        default: "No first comment"
+        operations:
+          - first
+      - name: Second Comment
+        default: "No second comment"
+        operations:
+          - first
+    format: "{First Comment}; {Second Comment}"
+```
+
+The two UUIDs are illustrative: replace them with the parent node IDs from your
+graph. For values `"Survey note"` and `"Archive note"`, this renders
+`"Survey note; Archive note"`. If a node is missing entirely from the graph,
+`default` cannot repair that configuration error; defaults handle missing
+resource values.
+
+You can also resolve each parent using its unique graph alias through `n_name`
+and assign a separate YAML alias. This example does not extend runtime
+`nodeid` support to subfields.
 
 ### Rules and defaults
 
@@ -167,6 +238,8 @@ field_filters:
 A single pipe-delimited specification tries options in order, returning the
 first candidate matching the first available option. `FIRST` falls back to the
 first remaining candidate. A bare `"|"` leaves candidates unchanged.
+Use `"|FIRST"` to select the first row without preferring a particular label;
+`"FIRST"` without a pipe is an ordinary equality filter, not that fallback.
 Matching is exact and case-sensitive; avoid spaces around pipe tokens.
 
 A list such as `Status: ["Active", "Pending"]` accepts either label and may
@@ -193,9 +266,17 @@ display_descriptor_rules:
     format: "{Name} ({NameUse})"
 ```
 
+## Configuration recipes
+
+Both recipes are complete single-section configs for the **Display name** admin
+tab. Adapt field names, concept labels and selection policy to your graph, then
+use the [admin test panel](#managing-configurations) before saving.
+
 ### Monument name example
 
-This single-section config matches the supplied Monument test graph:
+Prefer an authoritative name regardless of its position in the tile list, and
+keep a useful label when no name is available. These fields match the supplied
+Monument test graph:
 
 ```yaml
 fields:
@@ -209,19 +290,124 @@ display_descriptor_rules:
       - name: Monument Name
         required: true
         field_filters:
-          NameUse: "Primary|FIRST"
+          NameUse: "Primary|Statutory|Original|FIRST"
+        default: "Unnamed Monument"
         operations:
-          - first
+          - trim
+          - titlecase
       - name: Primary Reference Number
         required: true
     format: "[{Primary Reference Number}] {Monument Name}"
   - format: "Unknown monument"
 ```
 
-Adapt names and labels to your graph. The
+For reference number `149652`, consider these names in tile order:
+
+1. `"church of st mary"` with use type Original.
+2. `"old church"` with use type Primary.
+3. `"parish church"` with use type Statutory.
+
+| Resource data | Result |
+| --- | --- |
+| All three names above | `[149652] Old Church` |
+| Primary name absent | `[149652] Parish Church` |
+| Only the Original name remains | `[149652] Church Of St Mary` |
+| Only `"local name"` with an unlisted use type remains | `[149652] Local Name` |
+| No names | `[149652] Unnamed Monument` |
+| Reference number missing | `Unknown monument` |
+
+The `default` lets the required name rule continue when it cannot select a
+value. The unconditional final block handles a missing reference number.
+The name and reference number come from different nodegroups; the name-use
+subfield stays in the name's nodegroup.
+
+The
 [Monument integration tests](./IMPLEMENTATION_GUIDE.md#offline-monument-fixtures)
-cover name persistence; their description-priority checks use inline service
+exercise name persistence; their description-priority checks use inline service
 configuration rather than the function's description path.
+
+### Synthesising a name from period and functional type
+
+For an unnamed monument, try a period/type label before resorting to
+`"Unnamed Monument"`. This recipe uses the supplied graph's `Use Phase Period`
+and `Functional Type` nodes, which share a nodegroup:
+
+```yaml
+fields:
+  - name: Monument Name
+    alias: Name
+    subfields:
+      - name: Monument Name Use Type
+        alias: NameUse
+  - name: Use Phase Period
+    alias: Period
+    subfields:
+      - name: Functional Type
+        alias: Type
+  - name: Primary Reference Number
+    alias: PRN
+display_descriptor_rules:
+  - rule:
+      - name: Name
+        required: true
+        field_filters:
+          NameUse: "Primary|Statutory|Original|FIRST"
+        operations:
+          - trim
+          - titlecase
+      - name: PRN
+        required: true
+    format: "[{PRN}] {Name}"
+  - rule:
+      - name: PRN
+        required: true
+      - name: Period
+        required: true
+        field_filters:
+          Type: "|FIRST"
+        operations:
+          - first
+          - trim
+      - name: Type
+        required: true
+        operations:
+          - first
+          - trim
+    format: "[{PRN}] {Period} {Type}"
+  - rule:
+      - name: PRN
+        required: true
+    format: "[{PRN}] Unnamed Monument"
+  - format: "Unknown monument"
+```
+
+The second block selects the first period-bearing Use Phase row, retaining its
+Functional Type subfield. `first` then chooses one period descriptor and one
+type if either value is a list. It does not combine a period from one row with
+a type from another. If the selected row has no type, the block fails rather
+than searching later rows; adapt the selection policy if your graph needs that.
+
+For reference number `149652`:
+
+| Resource data | Result |
+| --- | --- |
+| Primary name `"old church"` present | `[149652] Old Church` |
+| No name; period `"Uncertain"` and type `"Fishermens Fastener"` in the selected row | `[149652] Uncertain Fishermens Fastener` |
+| No name; selected row has periods `["Medieval", "Post Medieval"]` and types `["Wreck", "Obstruction"]` | `[149652] Medieval Wreck` |
+| No name; no usable period/type pair | `[149652] Unnamed Monument` |
+| Reference number missing | `Unknown monument` |
+
+`Use Phase Period` is a resource-instance field: the period text comes from the
+related resource's stored name, with the
+[related-resource fallback behaviour](./IMPLEMENTATION_GUIDE.md#database-extraction).
+Functional types come from concept value labels. Those related resources and
+concept values must exist in the destination environment.
+
+These outputs demonstrate rendering with materialised data. The minimal offline
+Monument resource loader does not populate Use Phase or create related period
+resources, so this is not a claim of existing database-backed coverage for this
+recipe. Also, many monuments can share a period/type label; retaining the PRN
+helps distinguish them without making the descriptor itself a unique key.
 
 ## Rendering in Python
 

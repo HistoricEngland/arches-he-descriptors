@@ -3,6 +3,25 @@
 An Arches extension for generating Historic England resource display names,
 descriptions and map popups from graph-specific YAML rules.
 
+## Why use this?
+
+A resource can have several names, no name, or useful identifying information
+spread across different cards. This function lets you express the descriptor
+policy in configuration rather than relying only on tile order or changing code:
+
+- Prefer a Primary name, then Statutory or Original, before taking another name.
+- Combine fields from different cards in the same descriptor.
+- Try another rule when required information is missing, or supply a default.
+- Control reference-number placement and apply text transformations.
+
+These descriptors help users recognise resources in search results, report
+titles, editor headings and map popups. A synthesised label may be shared by many
+resources; include an appropriate reference number when users need to distinguish
+them. A readable descriptor is not itself a guaranteed unique identifier.
+
+See the [configuration recipes](./docs/USER_GUIDE.md#configuration-recipes) for
+preferred-name selection and a period/type fallback for unnamed monuments.
+
 ## Documentation
 
 Start here for installation and integration. Each supporting document owns a
