@@ -1,275 +1,123 @@
 # Arches HE Descriptors
 
-An Arches extension for generating resource display names, descriptions and map
-popups from graph-specific YAML rules.
-
-Any organisation can configure it to suit its resource models, terminology and
-descriptor policies; it is not limited to Historic England data or workflows.
-
-## Why use this?
-
-A resource can have several names, no name, or useful identifying information
-spread across different cards. This function lets you express the descriptor
-policy in configuration rather than relying only on tile order or changing code:
-
-- Prefer a Primary name, then Statutory or Original, before taking another name.
-- Combine fields from different cards in the same descriptor.
-- Try another rule when required information is missing, or supply a default.
-- Control reference-number placement and apply text transformations.
-
-These descriptors help users recognise resources in search results, report
-titles, editor headings and map popups. A synthesised label may be shared by many
-resources; include an appropriate reference number when users need to distinguish
-them. A readable descriptor is not itself a guaranteed unique identifier.
-
-See the [configuration recipes](./docs/USER_GUIDE.md#configuration-recipes) for
-preferred-name selection and a period/type fallback for unnamed monuments.
-
-## Documentation
-
-Start here for installation and integration. Each supporting document owns a
-different topic:
-
-| Document | Use it for |
-| --- | --- |
-| [Configuration guide](./docs/USER_GUIDE.md) | Admin workflow, YAML fields, rules, filters, operations and examples |
-| [Implementation guide](./docs/IMPLEMENTATION_GUIDE.md) | Service internals, API contracts, limitations and testing |
+This is an Arches extension app that provides descriptor functions used by Historic England for use with their Arches-based heritage inventory systems.
 
 ## Requirements
 
-- Python >=3.10, subject to the supported Python versions of your Arches release.
-- Arches >=7.6.17, <7.7.0.
-- The database, search services and front-end tooling required by your Arches
-  project.
+- Python 3.10+ (Check the Arches python requirements and match your Python version)
+- Arches >=7.6.0, <7.7.0
 
-These package constraints come from [pyproject.toml](./pyproject.toml); they are
-not a claim that every newer Python release has been tested.
+## Installing for Development
 
-## Integrating into an existing Arches project
+For development purposes, you can treat this app as a standard Arches project. Either use the instructions for developing an Arches project or use the arches-containers configuration included in this repository.
 
-Run management commands from the host project's directory containing
-`manage.py`, using its environment and settings.
+- **For development (standard):**
 
-### 1. Install the package
+  ```bash
+  pip install -e '/path/to/arches_he_descriptors[dev]'
+  ```
 
-#### From PyPI
+  This installs the app in editable mode, allowing you to make changes and see them reflected immediately without needing to reinstall.
 
-Install Arches HE Descriptors from
-[PyPI](https://pypi.org/project/arches-he-descriptors/) into your host project's
-Python environment:
+- **For development using included arches-container configuration:**
 
-```bash
-python -m pip install arches-he-descriptors
-```
+  > arches-containers is a tool developed by Historic England to enable the quick set up of development environments.  You can find out more about arches-containers and how to install and use it, please see the [arches-containers documentation on PyPI](https://pypi.org/project/arches-containers/)
 
-If the host project manages dependencies in `pyproject.toml`, add the package to
-its existing `[project]` dependencies and install using the project's normal
-dependency workflow:
+  Please ensure that you clone the arches-he-descriptors repository into a directory that uses underscores instead of hyphens, as the arches-containers configuration expects this format. For example, clone it to `arches_he_descriptors`.
 
-```toml
-dependencies = [
-    # Keep the project's existing dependencies.
-    "arches-he-descriptors",
-]
-```
+    ```bash
+    git clone https://github.com/HistoricEngland/arches-he-descriptors.git arches_he_descriptors
+    ```
 
-For reproducible deployments, pin a published version using
-`arches-he-descriptors==<published-version>`, replacing the placeholder with your
-chosen release. The distribution name is `arches-he-descriptors`; the Python
-module and Django application name remain `arches_he_descriptors`.
+  This repository includes an `arches-containers` project configuration, so you can import, activate, and start the system as follows:
 
-Installing the package does not configure the host project, apply migrations or
-register the function. Continue with steps 2-6 below.
+  1. Ensure Docker is installed and running.
+  2. Navigate to your workspace directory (the root where your projects and containers live).
+  3. Import the arches-container project configuration:
 
-#### From a local checkout or Git
+     ```bash
+     act import -p arches_he_descriptors
+     ```
 
-For development or installing directly from source, use a local checkout:
+  4. Activate the project:
 
-```bash
-pip install -e /path/to/arches_he_descriptors
-```
+     ```bash
+     act activate -p arches_he_descriptors
+     ```
 
-Alternatively, add a Git dependency to the host project's `[project]`
-dependencies, selecting a branch, tag or preferably a commit you have verified:
+  5. Start the system:
 
-```toml
-dependencies = [
-    # Keep the project's existing dependencies.
-    "arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@<verified-ref>",
-]
-```
+     ```bash
+     act up
+     ```
 
-Replace `<verified-ref>` before installing. Keep the host's Arches version within
-the [requirements](#requirements); do not lower dependency constraints merely to
-make an incompatible environment install.
+  6. Once setup and webpack builds are complete, open a browser and navigate to `http://localhost:8002` or use `act view` in a terminal to open the project in your default browser.
 
-### 2. Configure application discovery
+## Using This App in Your Arches Project
 
-Add `arches_he_descriptors` to the existing `INSTALLED_APPS` and
-`ARCHES_APPLICATIONS` collections. Preserve all existing entries.
+While you can use Arches HE Descriptors as a standalone app, you may wish to use it as part of an Arches Project.  The following steps explain how to do this:
 
-Append the package locations to the existing Arches settings:
+### 1. Add to `your_project/pyproject.toml`
 
-```python
-DATATYPE_LOCATIONS.append("arches_he_descriptors.datatypes")
-FUNCTION_LOCATIONS.append("arches_he_descriptors.functions")
-SEARCH_COMPONENT_LOCATIONS.append("arches_he_descriptors.search_components")
-```
+  Add the following to your `pyproject.toml` dependencies (in the `[project]` section):
 
-### 3. Include the URLs before catch-all routes
+  ```toml
+  arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@release/1.0.x
+  ```
 
-In the host project's URL configuration, add:
+  Example:
+
+  ```toml
+  dependencies = [
+      "arches==7.6.17",
+      "arches-he-descriptors @ git+https://github.com/HistoricEngland/arches-he-descriptors.git@release/1.0.x",
+  ]
+  ```
+
+### 2. Update `your_project/your_project/settings.py`
+
+Add to `INSTALLED_APPS` and `ARCHES_APPLICATIONS`:
 
 ```python
-path("", include("arches_he_descriptors.urls")),
+INSTALLED_APPS = (
+    ...
+    "your_project",
+    "arches_he_descriptors",
+)
+ARCHES_APPLICATIONS = ("arches_he_descriptors",)
 ```
 
-Import `path` and `include` from `django.urls`. Place this include before any
-catch-all application include: otherwise descriptor API requests can be
-intercepted by that application.
+### 3. Run Database Migrations
 
-The package URL configuration also includes Arches core URLs. Check the host's
-include ordering rather than assuming this is a descriptor-only URL module.
-The registered endpoints are documented in the
-[API reference](./docs/IMPLEMENTATION_GUIDE.md#api-reference).
+Run the following command to apply any database migrations required by this app:
 
-### 4. Apply migrations and register the function
+> if using the arches-containers, run this in the application container
 
 ```bash
 python manage.py migrate
-python manage.py fn register --source /path/to/arches_he_descriptors/arches_he_descriptors/functions/arches_he_descriptors.py
-python manage.py fn list
 ```
 
-Adjust the registration path to the checkout or installed package. For a PyPI
-installation, locate the function file using the same Python environment as the
-host project:
+### 4. Install and Build Front-End Dependencies
 
-```bash
-python -c "import arches_he_descriptors; from pathlib import Path; print(Path(arches_he_descriptors.__file__).parent / 'functions' / 'arches_he_descriptors.py')"
-```
+From the directory containing your `your_project/package.json`:
 
-Use the printed absolute path as the registration command's `--source` argument.
-In this repository's application container, the checkout path is:
-
-```bash
-python manage.py fn register --source /web_root/arches_he_descriptors/arches_he_descriptors/functions/arches_he_descriptors.py
-```
-
-Migrations create the configuration table; they do not register the Arches
-function. Confirm that **Arches HE Descriptors** appears in the function list.
-
-### 5. Assign and configure descriptors
-
-In the graph designer, assign **Arches HE Descriptors** as the resource model's
-primary descriptor function, replacing the previous primary descriptor
-assignment. Keep exactly one primary descriptor function assigned.
-
-Create the graph's configuration in Django admin under **Display descriptor
-graph configs**, following the
-[admin workflow](./docs/USER_GUIDE.md#managing-configurations).
-Use the [Monument example](./docs/USER_GUIDE.md#monument-name-example) as a starting
-point, adapting it to the destination graph and vocabulary.
-
-For display names, turn on **Enabled** in the function's Display Name tab.
-Internally this is `descriptor_types.name.show_prn=True`: it enables YAML
-rendering, rather than automatically adding a primary reference number.
-The YAML format decides whether a reference number appears. When this flag is
-explicitly `False`, the function returns the existing stored name.
-
-The function maps Arches `name`, `description` and `map_popup` to the
-`display_name`, `display_description` and `map_popup` configuration sections.
-See [section storage](./docs/USER_GUIDE.md#descriptor-sections) and
-[function behaviour](./docs/IMPLEMENTATION_GUIDE.md#arches-function-behaviour),
-including the `Undefined` fallback.
-
-Publish the graph after configuring its function assignment. Saving YAML does
-not regenerate stored resource descriptors. Regenerate existing descriptors
-through the host project's Arches workflow; the name integration tests exercise
-`Resource.save_descriptors(descriptors=("name",))`.
-
-### 6. Build and start the host project
-
-Use the host project's normal front-end build and deployment workflow. If it
-provides the same development scripts as this repository:
+> if using arches-containers, run this in the application container or restart the webpack
 
 ```bash
 npm install
 npm run build_development
+```
+
+### 5. Start Your Arches Project
+
+```bash
 python manage.py runserver
 ```
 
-Run the npm commands in the directory containing the host's `package.json`.
-`runserver` is for development, not production deployment. See the
-[Arches deployment documentation](https://arches.readthedocs.io/en/stable/deployment/)
-and the [API deployment caveats](./docs/IMPLEMENTATION_GUIDE.md#deployment-caveats).
+## License
 
-### Docker integration
+This project is licensed under the GNU AGPLv3. See the LICENSE file for details.
 
-For an existing containerised project, install the package in the image and
-mount its checkout into each service that needs it (application, livereload and
-webpack). Adapt service names and paths to your compose layout; the former
-Mariner-specific instructions are consolidated here.
+---
 
-For a build context containing the checkout, a Dockerfile can include:
-
-```dockerfile
-ARG ARCHES_HE_DESCRIPTORS_PATH=./arches_he_descriptors
-COPY ${ARCHES_HE_DESCRIPTORS_PATH} /web_root/arches_he_descriptors
-RUN pip install -e '/web_root/arches_he_descriptors[dev]'
-```
-
-For development, the corresponding compose volume is:
-
-```yaml
-volumes:
-  - ../../arches_he_descriptors:/web_root/arches_he_descriptors
-```
-
-The source path is relative to the compose file. Rebuild the image after changing
-its installation steps, then run migrations and function registration inside the
-host application container as described above.
-
-## Developing this repository
-
-You can develop this repository as an Arches project, or install it in editable
-mode in an existing development environment:
-
-```bash
-pip install -e '/path/to/arches_he_descriptors[dev]'
-```
-
-### Included arches-containers configuration
-
-The [.ac_arches_he_descriptors configuration](./.ac_arches_he_descriptors/)
-expects the checkout directory to use underscores:
-
-```bash
-git clone https://github.com/HistoricEngland/arches-he-descriptors.git arches_he_descriptors
-```
-
-Install Docker and
-[arches-containers](https://pypi.org/project/arches-containers/), then run from
-the workspace containing the checkout:
-
-```bash
-act import -p arches_he_descriptors
-act activate -p arches_he_descriptors
-act up
-```
-
-Review the configuration's sibling checkout/data mounts and Arches branch before
-starting; provide those directories and keep the selected Arches version within
-the package constraints. Once setup and webpack builds finish, open
-<http://localhost:8002> or run `act view`.
-
-## Testing
-
-See [Running tests](./docs/IMPLEMENTATION_GUIDE.md#running-tests) for commands,
-environment requirements, coverage boundaries and the offline Monument fixtures.
-The app and project function suites must run separately and sequentially.
-
-## Licence
-
-The project includes the GNU Affero General Public License version 3 in
-[LICENSE](./LICENSE).
+For more information on deploying your Arches project, see the [Arches Deployment Guide](https://arches.readthedocs.io/en/stable/deployment/).
