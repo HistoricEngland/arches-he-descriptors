@@ -26,9 +26,7 @@ class TestSampleIndex(TestCase):
         mock_resourceinstance = Mock(graph_id="test_graph_id")
         mock_tiles = [Mock(), Mock(), Mock()]  # Mock tiles list
 
-        documents, doc_id = sample_index.get_documents_to_index(
-            mock_resourceinstance, mock_tiles
-        )
+        documents, doc_id = sample_index.get_documents_to_index(mock_resourceinstance, mock_tiles)
 
         self.assertEqual(
             documents,

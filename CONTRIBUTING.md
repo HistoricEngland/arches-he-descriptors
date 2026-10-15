@@ -101,7 +101,7 @@ Please refer to the [README](./README.md) for full setup instructions. At a high
 
 ## Code Style
 
-- **Python:** Follow [PEP 8](https://pep8.org/).
+- **Python:** Follow [PEP 8](https://pep8.org/) and format with Black 24.4.2 using the repository's 140-character line length in `pyproject.toml`. Run `python -m black .` to format and `python -m black --check .` to verify. The pre-commit hook uses the same configuration.
 - **JavaScript / TypeScript:** Follow the conventions already present in the codebase. ESLint configuration (if present) should be respected.
 - **HTML / Django templates:** Keep templates clean and well-indented.
 - **SCSS:** Follow the existing structure; avoid introducing new global styles without discussion.

@@ -3,9 +3,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-UUID_RE = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-)
+UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 
 
 def _yaml_scalar(value: str) -> str:
@@ -65,12 +63,8 @@ def _extract_uuid_from_comment(line: str) -> str:
     return match.group(0)
 
 
-def _extract_fields_uuid_hints(
-    yaml_config: str, field_count: int
-) -> List[Dict[str, Any]]:
-    hints: List[Dict[str, Any]] = [
-        {"preferred_nodeid": "", "subfields": []} for _ in range(field_count)
-    ]
+def _extract_fields_uuid_hints(yaml_config: str, field_count: int) -> List[Dict[str, Any]]:
+    hints: List[Dict[str, Any]] = [{"preferred_nodeid": "", "subfields": []} for _ in range(field_count)]
     if not yaml_config or field_count == 0:
         return hints
 
@@ -107,9 +101,7 @@ def _extract_fields_uuid_hints(
             current_field_index += 1
             if current_field_index >= field_count:
                 continue
-            hints[current_field_index]["preferred_nodeid"] = _extract_uuid_from_comment(
-                line
-            )
+            hints[current_field_index]["preferred_nodeid"] = _extract_uuid_from_comment(line)
             continue
 
         if line.startswith("      - ") and in_subfields:
@@ -117,9 +109,7 @@ def _extract_fields_uuid_hints(
                 continue
             if in_ambiguous_block:
                 continue
-            hints[current_field_index]["subfields"].append(
-                _extract_uuid_from_comment(line)
-            )
+            hints[current_field_index]["subfields"].append(_extract_uuid_from_comment(line))
 
     return hints
 
@@ -132,9 +122,7 @@ def _select_by_preferred_nodeid(
     if single or not ambiguous or not preferred_nodeid:
         return single, ambiguous
 
-    matched = [
-        candidate for candidate in ambiguous if candidate["nodeid"] == preferred_nodeid
-    ]
+    matched = [candidate for candidate in ambiguous if candidate["nodeid"] == preferred_nodeid]
     if len(matched) == 1:
         return matched, []
 
@@ -178,22 +166,16 @@ def _render_field_lines(field_specs: List[Dict[str, Any]]) -> str:
                         )
                     lines.append("      **")
                 else:
-                    has_structured_keys = bool(
-                        subfield.get("nodeid") or subfield.get("alias")
-                    )
+                    has_structured_keys = bool(subfield.get("nodeid") or subfield.get("alias"))
                     if has_structured_keys:
-                        sub_line = (
-                            f"      - name: {_yaml_scalar(subfield['resolved_name'])}"
-                        )
+                        sub_line = f"      - name: {_yaml_scalar(subfield['resolved_name'])}"
                         if subfield.get("comment"):
                             sub_line += f"  # {subfield['comment']}"
                         lines.append(sub_line)
                         if subfield.get("nodeid"):
                             lines.append(f"        nodeid: {subfield['nodeid']}")
                         if subfield.get("alias"):
-                            lines.append(
-                                f"        alias: {_yaml_scalar(subfield['alias'])}"
-                            )
+                            lines.append(f"        alias: {_yaml_scalar(subfield['alias'])}")
                     else:
                         sub_line = f"      - {_yaml_scalar(subfield['resolved_name'])}"
                         if subfield.get("comment"):
@@ -236,15 +218,15 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
         alias = _normalize_label(row["alias"])
         if alias:
             bucket = node_alias_index.setdefault(alias, [])
-            candidate = {"name": row["name"], "nodeid": str(row["nodeid"]), "alias": alias}
+            candidate = {
+                "name": row["name"],
+                "nodeid": str(row["nodeid"]),
+                "alias": alias,
+            }
             if not any(existing["nodeid"] == candidate["nodeid"] for existing in bucket):
                 bucket.append(candidate)
 
-    label_rows = (
-        CardXNodeXWidget.objects.filter(card__graph_id=graph_id)
-        .select_related("node")
-        .all()
-    )
+    label_rows = CardXNodeXWidget.objects.filter(card__graph_id=graph_id).select_related("node").all()
 
     widget_label_index: Dict[str, List[Dict[str, str]]] = {}
     for row in label_rows:
@@ -312,9 +294,7 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
                             }
                         )
 
-        parent_preferred_nodeid = explicit_parent_nodeid or field_hints[
-            field_index
-        ].get("preferred_nodeid", "")
+        parent_preferred_nodeid = explicit_parent_nodeid or field_hints[field_index].get("preferred_nodeid", "")
 
         spec: Dict[str, Any] = {
             "resolved_name": field_name,
@@ -404,9 +384,7 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
             explicit_subfield_nodeid = subfield_data.get("nodeid", "")
             subfield_alias = subfield_data.get("alias", "")
             subfield_preferred_nodeid = explicit_subfield_nodeid or (
-                subfield_hints[subfield_index]
-                if subfield_index < len(subfield_hints)
-                else ""
+                subfield_hints[subfield_index] if subfield_index < len(subfield_hints) else ""
             )
             sub_spec = {
                 "resolved_name": subfield,
@@ -520,9 +498,7 @@ def normalize_config_yaml_for_graph(yaml_config: str, graph_id) -> str:
     if in_fields and fields_section_start is not None:
         # Skip to next top-level key in original
         in_original_fields = False
-        for i, line in enumerate(
-            original_lines[fields_section_start:], fields_section_start
-        ):
+        for i, line in enumerate(original_lines[fields_section_start:], fields_section_start):
             stripped = line.strip()
             if stripped.startswith("fields:"):
                 in_original_fields = True
@@ -594,9 +570,7 @@ def extract_yaml_section(full_yaml_str: str, descriptor_type: str) -> Optional[s
     return yaml.safe_dump(section, sort_keys=False)
 
 
-def merge_yaml_section(
-    full_yaml_str: Optional[str], section_yaml_str: str, descriptor_type: str
-) -> str:
+def merge_yaml_section(full_yaml_str: Optional[str], section_yaml_str: str, descriptor_type: str) -> str:
     """Replace or insert a descriptor-type section in the combined config.
 
     Stores sections as a JSON dict of raw YAML strings to preserve user formatting.
@@ -624,4 +598,3 @@ def merge_yaml_section(
 
     sections[descriptor_type] = section_yaml_str
     return json.dumps(sections)
-

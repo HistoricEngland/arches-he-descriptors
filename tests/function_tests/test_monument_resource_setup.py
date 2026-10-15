@@ -34,22 +34,14 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.resource_source = (
-            Path(__file__).resolve().parents[1]
-            / "fixtures"
-            / "pkg"
-            / "business_data"
-            / "st_bernards_monument.bulk_disambiguated.json"
+            Path(__file__).resolve().parents[1] / "fixtures" / "pkg" / "business_data" / "st_bernards_monument.bulk_disambiguated.json"
         )
-        cls.fixture = create_monument_resource(
-            cls.resource_source, cls.graph_definition
-        )
+        cls.fixture = create_monument_resource(cls.resource_source, cls.graph_definition)
         cls.descriptor_config = {
             "fields": [
                 {
                     "name": "Monument Name",
-                    "subfields": [
-                        {"name": "Monument Name Use Type", "alias": "NameUse"}
-                    ],
+                    "subfields": [{"name": "Monument Name Use Type", "alias": "NameUse"}],
                 },
                 "Primary Reference Number",
             ],
@@ -79,9 +71,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
         self.assertEqual(resource.legacyid, str(resource.pk))
         self.assertEqual(resource.graph_publication_id, resource.graph.publication_id)
         self.assertIsNotNone(resource.graph_publication_id)
-        self.assertEqual(
-            models.TileModel.objects.filter(resourceinstance=resource).count(), 18
-        )
+        self.assertEqual(models.TileModel.objects.filter(resourceinstance=resource).count(), 18)
         self.assertTrue(all(tile.parenttile_id is None for tile in self.fixture.tiles))
         self.assertIsNone(resource.descriptors)
 
@@ -94,9 +84,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
             with self.subTest(section=section):
                 group_id = models.Node.objects.get(pk=node_id).nodegroup_id
                 tiles = list(
-                    models.TileModel.objects.filter(
-                        resourceinstance=self.fixture.resource, nodegroup_id=group_id
-                    ).order_by("sortorder")
+                    models.TileModel.objects.filter(resourceinstance=self.fixture.resource, nodegroup_id=group_id).order_by("sortorder")
                 )
                 self.assertEqual(len(tiles), count)
                 self.assertEqual([tile.sortorder for tile in tiles], list(range(count)))
@@ -134,9 +122,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                 if datatype not in ("string", "number", "concept"):
                     self.assertIsNone(value)
         self.assertEqual(
-            models.ResourceInstance.objects.filter(
-                graph_id=self.monument_graph_id
-            ).count(),
+            models.ResourceInstance.objects.filter(graph_id=self.monument_graph_id).count(),
             1,
         )
 
@@ -165,10 +151,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                     collection_id = node.config["rdmCollection"]
                     collection = models.Concept.objects.get(pk=collection_id)
                     self.assertEqual(collection.nodetype_id, "Collection")
-                    member_values = {
-                        member[2]
-                        for member in Concept().get_child_collections(collection_id)
-                    }
+                    member_values = {member[2] for member in Concept().get_child_collections(collection_id)}
                     self.assertIn(value_id, member_values)
                 value_ids.add(value_id)
                 collection_ids.add(collection_id)
@@ -188,9 +171,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                 "Monument Name": [
                     {
                         "value": record["Monument Name"]["@display_value"],
-                        "Monument Name Use Type": record["Monument Name Use Type"].get(
-                            "value"
-                        ),
+                        "Monument Name Use Type": record["Monument Name Use Type"].get("value"),
                     }
                     for record in entry["resource"]["Monument Names"]
                 ],
@@ -221,9 +202,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
         self.assertEqual(first_primary.data[NAME_USE_NODE_ID], PRIMARY_VALUE_ID)
         first_primary.sortorder = 20
         first_primary.save()
-        primary_tiles = [
-            tile for tile in names if tile.data[NAME_USE_NODE_ID] == PRIMARY_VALUE_ID
-        ]
+        primary_tiles = [tile for tile in names if tile.data[NAME_USE_NODE_ID] == PRIMARY_VALUE_ID]
         self.assertEqual(len(primary_tiles), 2)
         resource = Resource.objects.get(pk=self.fixture.resource.pk)
         resource.save_descriptors(descriptors=("name",))
@@ -263,18 +242,14 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                 ],
                 "format": f"Rule {index}: {{Monument Name}} ({{NameUse}})",
             }
-            for index, use_type in enumerate(
-                ("Registered", "Original", "Primary"), start=1
-            )
+            for index, use_type in enumerate(("Registered", "Original", "Primary"), start=1)
         ]
         service = DisplayDescriptorService()
         self.assertEqual(len(config["display_descriptor_rules"]), 3)
         for index in range(2):
             with self.subTest(failing_rule=index + 1):
                 isolated_config = deepcopy(config)
-                isolated_config["display_descriptor_rules"] = [
-                    config["display_descriptor_rules"][index]
-                ]
+                isolated_config["display_descriptor_rules"] = [config["display_descriptor_rules"][index]]
                 self.assertIsNone(
                     service.render_for_resource(
                         resource_id=str(self.fixture.resource.pk),
@@ -283,9 +258,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                     )
                 )
 
-        expected = (
-            "Rule 3: St Bernard's Hospital (Georgian Psychiatric Hospital) (PRIMARY)"
-        )
+        expected = "Rule 3: St Bernard's Hospital (Georgian Psychiatric Hospital) (PRIMARY)"
         self.assertEqual(
             service.render_for_resource(
                 resource_id=str(self.fixture.resource.pk),
@@ -294,9 +267,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
             ),
             expected,
         )
-        DisplayDescriptorGraphConfig.objects.filter(
-            graph_id=self.monument_graph_id
-        ).update(yaml_config=json.dumps(config))
+        DisplayDescriptorGraphConfig.objects.filter(graph_id=self.monument_graph_id).update(yaml_config=json.dumps(config))
         resource = Resource.objects.get(pk=self.fixture.resource.pk)
         resource.save_descriptors(descriptors=("name",))
         saved_resource = models.ResourceInstance.objects.get(pk=resource.pk)
@@ -317,9 +288,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
                 ],
                 "format": f"Rule {index}: {{Monument Name}} ({{NameUse}})",
             }
-            for index, use_type in enumerate(
-                ("Registered", "Original", "Latest"), start=1
-            )
+            for index, use_type in enumerate(("Registered", "Original", "Latest"), start=1)
         ]
         service = DisplayDescriptorService()
         for index, block in enumerate(config["display_descriptor_rules"], start=1):
@@ -351,9 +320,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
             ),
             expected,
         )
-        DisplayDescriptorGraphConfig.objects.filter(
-            graph_id=self.monument_graph_id
-        ).update(yaml_config=json.dumps(config))
+        DisplayDescriptorGraphConfig.objects.filter(graph_id=self.monument_graph_id).update(yaml_config=json.dumps(config))
         resource = Resource.objects.get(pk=self.fixture.resource.pk)
         resource.save_descriptors(descriptors=("name",))
         saved_resource = models.ResourceInstance.objects.get(pk=resource.pk)
@@ -412,9 +379,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
     def test_missing_concept_value_is_rejected_before_resource_creation(self):
         models.Value.objects.filter(pk=PRIMARY_VALUE_ID).delete()
         count = models.ResourceInstance.objects.count()
-        with self.assertRaisesRegex(
-            ValueError, "Missing or mismatched.*" + PRIMARY_VALUE_ID
-        ):
+        with self.assertRaisesRegex(ValueError, "Missing or mismatched.*" + PRIMARY_VALUE_ID):
             create_monument_resource(self.resource_source, self.graph_definition)
         self.assertEqual(models.ResourceInstance.objects.count(), count)
 
@@ -432,9 +397,7 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
             create_monument_resource(self.resource_source, self.graph_definition)
 
     def test_unpublished_graph_is_rejected(self):
-        models.GraphModel.objects.filter(pk=self.monument_graph_id).update(
-            publication=None
-        )
+        models.GraphModel.objects.filter(pk=self.monument_graph_id).update(publication=None)
         with self.assertRaisesRegex(ValueError, "must be published"):
             create_monument_resource(self.resource_source, self.graph_definition)
 
@@ -450,21 +413,13 @@ class MonumentResourceSetupTests(BaseDescriptorTestCase):
         with self.assertRaises(IntegrityError):
             create_monument_resource(self.resource_source, self.graph_definition)
         self.assertEqual(
-            models.TileModel.objects.filter(
-                resourceinstance=self.fixture.resource
-            ).count(),
+            models.TileModel.objects.filter(resourceinstance=self.fixture.resource).count(),
             18,
         )
 
     def test_tile_failure_rolls_back_resource_creation(self):
         self.fixture.resource.delete()
-        with patch.object(
-            models.TileModel.objects, "create", side_effect=ValueError("tile failure")
-        ):
+        with patch.object(models.TileModel.objects, "create", side_effect=ValueError("tile failure")):
             with self.assertRaisesRegex(ValueError, "tile failure"):
                 create_monument_resource(self.resource_source, self.graph_definition)
-        self.assertFalse(
-            models.ResourceInstance.objects.filter(
-                pk="f5ab4bd6-43d4-4940-b856-fa6f93c98d4c"
-            ).exists()
-        )
+        self.assertFalse(models.ResourceInstance.objects.filter(pk="f5ab4bd6-43d4-4940-b856-fa6f93c98d4c").exists())

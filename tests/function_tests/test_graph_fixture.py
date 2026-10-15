@@ -13,10 +13,7 @@ from tests.function_tests.graph_fixture import (
 class DescriptorGraphFixtureTests(TestCase):
     def setUp(self):
         project_root = Path(__file__).resolve().parents[2]
-        source = (
-            project_root
-            / "arches_he_descriptors/tests/fixtures/pkg/graphs/resource_models/Monument.json"
-        )
+        source = project_root / "arches_he_descriptors/tests/fixtures/pkg/graphs/resource_models/Monument.json"
         self.source = json.loads(source.read_text())["graph"][0]
         self.details = {
             "functionid": "60000000-0000-0000-0000-000000000003",
@@ -38,11 +35,7 @@ class DescriptorGraphFixtureTests(TestCase):
         for field in ("name", "description", "subtitle"):
             self.assertEqual(graph[field], {"en": self.source[field]})
         for card in graph["cards"]:
-            original = next(
-                item
-                for item in self.source["cards"]
-                if item["cardid"] == card["cardid"]
-            )
+            original = next(item for item in self.source["cards"] if item["cardid"] == card["cardid"])
             for field in (
                 "name",
                 "description",
@@ -86,9 +79,7 @@ class DescriptorGraphFixtureTests(TestCase):
         cards = {card["cardid"] for card in graph["cards"]}
 
         self.assertNotIn(EXCLUDED_NODEGROUP_ID, groups)
-        self.assertNotIn(
-            "bngcentrepoint", {node["datatype"] for node in graph["nodes"]}
-        )
+        self.assertNotIn("bngcentrepoint", {node["datatype"] for node in graph["nodes"]})
         self.assertEqual(graph["template_id"], "50000000-0000-0000-0000-000000000001")
         self.assertEqual(graph["config"], {})
         self.assertEqual(len(self.source["nodes"]) - len(nodes), 2)
@@ -112,9 +103,7 @@ class DescriptorGraphFixtureTests(TestCase):
         self.assertEqual(len(graph["functions_x_graphs"]), 1)
         assignment = graph["functions_x_graphs"][0]
         self.assertEqual(assignment["function_id"], self.details["functionid"])
-        self.assertEqual(
-            assignment["config"]["module"], self.details["defaultconfig"]["module"]
-        )
+        self.assertEqual(assignment["config"]["module"], self.details["defaultconfig"]["module"])
         self.assertEqual(
             assignment["config"]["class_name"],
             self.details["defaultconfig"]["class_name"],
@@ -126,24 +115,18 @@ class DescriptorGraphFixtureTests(TestCase):
         )
 
     def test_unexpected_dependencies_are_reported(self):
-        self.source["functions_x_graphs"].append(
-            {"function_id": "unexpected", "config": {}}
-        )
+        self.source["functions_x_graphs"].append({"function_id": "unexpected", "config": {}})
         with self.assertRaisesRegex(ValueError, "Unexpected source graph functions"):
             prepare_descriptor_graph(self.source, self.details)
 
     def test_missing_descriptor_assignment_is_reported(self):
         self.source["functions_x_graphs"] = [
-            assignment
-            for assignment in self.source["functions_x_graphs"]
-            if assignment["function_id"] in EXCLUDED_FUNCTION_IDS
+            assignment for assignment in self.source["functions_x_graphs"] if assignment["function_id"] in EXCLUDED_FUNCTION_IDS
         ]
         with self.assertRaisesRegex(ValueError, "exactly one descriptor assignment"):
             prepare_descriptor_graph(self.source, self.details)
 
     def test_unexpected_spatial_child_group_is_reported(self):
-        self.source["nodegroups"].append(
-            {"nodegroupid": "unexpected", "parentnodegroup_id": EXCLUDED_NODEGROUP_ID}
-        )
+        self.source["nodegroups"].append({"nodegroupid": "unexpected", "parentnodegroup_id": EXCLUDED_NODEGROUP_ID})
         with self.assertRaisesRegex(ValueError, "unexpectedly has child nodegroups"):
             prepare_descriptor_graph(self.source, self.details)

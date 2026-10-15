@@ -28,55 +28,25 @@ def prepare_descriptor_graph(source, descriptor_details):
                 if isinstance(record.get(field), str):
                     record[field] = {"en": record[field]}
 
-    if any(
-        group["parentnodegroup_id"] == EXCLUDED_NODEGROUP_ID
-        for group in graph["nodegroups"]
-    ):
+    if any(group["parentnodegroup_id"] == EXCLUDED_NODEGROUP_ID for group in graph["nodegroups"]):
         raise ValueError("The excluded BNG nodegroup unexpectedly has child nodegroups")
 
-    excluded_nodes = {
-        node["nodeid"]
-        for node in graph["nodes"]
-        if node["nodegroup_id"] == EXCLUDED_NODEGROUP_ID
-    }
-    graph["nodes"] = [
-        node for node in graph["nodes"] if node["nodeid"] not in excluded_nodes
-    ]
+    excluded_nodes = {node["nodeid"] for node in graph["nodes"] if node["nodegroup_id"] == EXCLUDED_NODEGROUP_ID}
+    graph["nodes"] = [node for node in graph["nodes"] if node["nodeid"] not in excluded_nodes]
     graph["edges"] = [
-        edge
-        for edge in graph["edges"]
-        if edge["domainnode_id"] not in excluded_nodes
-        and edge["rangenode_id"] not in excluded_nodes
+        edge for edge in graph["edges"] if edge["domainnode_id"] not in excluded_nodes and edge["rangenode_id"] not in excluded_nodes
     ]
-    graph["nodegroups"] = [
-        group
-        for group in graph["nodegroups"]
-        if group["nodegroupid"] != EXCLUDED_NODEGROUP_ID
-    ]
-    graph["cards"] = [
-        card for card in graph["cards"] if card["nodegroup_id"] != EXCLUDED_NODEGROUP_ID
-    ]
-    graph["cards_x_nodes_x_widgets"] = [
-        widget
-        for widget in graph["cards_x_nodes_x_widgets"]
-        if widget["node_id"] not in excluded_nodes
-    ]
+    graph["nodegroups"] = [group for group in graph["nodegroups"] if group["nodegroupid"] != EXCLUDED_NODEGROUP_ID]
+    graph["cards"] = [card for card in graph["cards"] if card["nodegroup_id"] != EXCLUDED_NODEGROUP_ID]
+    graph["cards_x_nodes_x_widgets"] = [widget for widget in graph["cards_x_nodes_x_widgets"] if widget["node_id"] not in excluded_nodes]
 
     assignments = graph["functions_x_graphs"]
     unexpected_functions = (
-        {assignment["function_id"] for assignment in assignments}
-        - EXCLUDED_FUNCTION_IDS
-        - {SOURCE_DESCRIPTOR_FUNCTION_ID}
+        {assignment["function_id"] for assignment in assignments} - EXCLUDED_FUNCTION_IDS - {SOURCE_DESCRIPTOR_FUNCTION_ID}
     )
     if unexpected_functions:
-        raise ValueError(
-            f"Unexpected source graph functions: {sorted(unexpected_functions)}"
-        )
-    descriptor_assignments = [
-        assignment
-        for assignment in assignments
-        if assignment["function_id"] == SOURCE_DESCRIPTOR_FUNCTION_ID
-    ]
+        raise ValueError(f"Unexpected source graph functions: {sorted(unexpected_functions)}")
+    descriptor_assignments = [assignment for assignment in assignments if assignment["function_id"] == SOURCE_DESCRIPTOR_FUNCTION_ID]
     if len(descriptor_assignments) != 1:
         raise ValueError("The source graph must have exactly one descriptor assignment")
 

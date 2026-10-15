@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 APP_NAME = "arches_he_descriptors"
-APP_VERSION = semantic_version.Version(major=0, minor=0, patch=0)
+APP_VERSION = semantic_version.Version(major=1, minor=0, patch=0, prerelease=("rc1",))
 APP_ROOT = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 
 WEBPACK_LOADER = {
@@ -166,13 +166,9 @@ MIDDLEWARE = [
     # "silk.middleware.SilkyMiddleware",
 ]
 
-MIDDLEWARE.insert(  # this must resolve to first MIDDLEWARE entry
-    0, "django_hosts.middleware.HostsRequestMiddleware"
-)
+MIDDLEWARE.insert(0, "django_hosts.middleware.HostsRequestMiddleware")  # this must resolve to first MIDDLEWARE entry
 
-MIDDLEWARE.append(  # this must resolve last MIDDLEWARE entry
-    "django_hosts.middleware.HostsResponseMiddleware"
-)
+MIDDLEWARE.append("django_hosts.middleware.HostsResponseMiddleware")  # this must resolve last MIDDLEWARE entry
 
 STATICFILES_DIRS = build_staticfiles_dirs(app_root=APP_ROOT)
 
@@ -183,9 +179,7 @@ TEMPLATES = build_templates_config(
 
 ALLOWED_HOSTS = []
 
-SYSTEM_SETTINGS_LOCAL_PATH = os.path.join(
-    APP_ROOT, "system_settings", "System_Settings.json"
-)
+SYSTEM_SETTINGS_LOCAL_PATH = os.path.join(APP_ROOT, "system_settings", "System_Settings.json")
 WSGI_APPLICATION = "arches_he_descriptors.wsgi.application"
 
 # URL that handles the media served from MEDIA_ROOT, used for managing stored files.
@@ -269,9 +263,7 @@ HIDE_EMPTY_NODES_IN_REPORT = False
 BYPASS_UNIQUE_CONSTRAINT_TILE_VALIDATION = False
 BYPASS_REQUIRED_VALUE_TILE_VALIDATION = False
 
-DATE_IMPORT_EXPORT_FORMAT = (
-    "%Y-%m-%d"  # Custom date format for dates imported from and exported to csv
-)
+DATE_IMPORT_EXPORT_FORMAT = "%Y-%m-%d"  # Custom date format for dates imported from and exported to csv
 
 # This is used to indicate whether the data in the CSV and SHP exports should be
 # ordered as seen in the resource cards or not.
@@ -308,9 +300,7 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 CELERY_BROKER_URL = ""  # RabbitMQ --> "amqp://guest:guest@localhost",  Redis --> "redis://localhost:6379/0"
 CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_RESULT_BACKEND = (
-    "django-db"  # Use 'django-cache' if you want to use your cache as your backend
-)
+CELERY_RESULT_BACKEND = "django-db"  # Use 'django-cache' if you want to use your cache as your backend
 CELERY_TASK_SERIALIZER = "json"
 
 
@@ -376,9 +366,7 @@ RESTRICT_CELERY_EXPORT_FOR_ANONYMOUS_USER = False
 # Dictionary containing any additional context items for customising email templates
 EXTRA_EMAIL_CONTEXT = {
     "salutation": _("Hi"),
-    "expiration": (
-        datetime.now() + timedelta(seconds=CELERY_SEARCH_EXPORT_EXPIRES)
-    ).strftime("%A, %d %B %Y"),
+    "expiration": (datetime.now() + timedelta(seconds=CELERY_SEARCH_EXPORT_EXPIRES)).strftime("%A, %d %B %Y"),
 }
 
 # see https://docs.djangoproject.com/en/1.9/topics/i18n/translation/#how-django-discovers-language-preference

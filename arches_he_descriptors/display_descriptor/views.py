@@ -26,20 +26,11 @@ def get_display_descriptor_graph_config(request, graph_id):
     descriptor_type = request.GET.get("descriptor_type")
     if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
         return JsonResponse(
-            {
-                "error": (
-                    f"Invalid descriptor_type '{descriptor_type}'. "
-                    f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
-                )
-            },
+            {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
             status=400,
         )
 
-    row = (
-        DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id)
-        .values("yaml_config")
-        .first()
-    )
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).values("yaml_config").first()
 
     yaml_config = row.get("yaml_config") if row else None
 
@@ -80,12 +71,7 @@ def save_display_descriptor_section(request, graph_id):
         return JsonResponse({"error": "descriptor_type is required"}, status=400)
     if descriptor_type not in DESCRIPTOR_TYPES:
         return JsonResponse(
-            {
-                "error": (
-                    f"Invalid descriptor_type '{descriptor_type}'. "
-                    f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
-                )
-            },
+            {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
             status=400,
         )
     if not section_yaml:
@@ -193,19 +179,11 @@ def _serialize_config_to_yaml(config_data):
 def _get_graph_yaml_for_resource(resource_id, descriptor_type=None):
     from arches.app.models.models import ResourceInstance
 
-    resource = (
-        ResourceInstance.objects.filter(resourceinstanceid=resource_id)
-        .values("graph_id")
-        .first()
-    )
+    resource = ResourceInstance.objects.filter(resourceinstanceid=resource_id).values("graph_id").first()
     if not resource:
         raise ValueError(f"Resource instance not found: {resource_id}")
 
-    row = (
-        DisplayDescriptorGraphConfig.objects.filter(graph_id=resource["graph_id"])
-        .values("yaml_config")
-        .first()
-    )
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=resource["graph_id"]).values("yaml_config").first()
     yaml_config = row.get("yaml_config") if row else None
     if not isinstance(yaml_config, str) or not yaml_config.strip():
         return None
@@ -243,12 +221,7 @@ def get_display_descriptor(request, resource_id):
 
         if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
             return JsonResponse(
-                {
-                    "error": (
-                        f"Invalid descriptor_type '{descriptor_type}'. "
-                        f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}"
-                    )
-                },
+                {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
                 status=400,
             )
 
@@ -266,14 +239,10 @@ def get_display_descriptor(request, resource_id):
                 payload = _add_yaml_metadata(
                     payload,
                     include_yaml=True,
-                    yaml_config=_get_graph_yaml_for_resource(
-                        resource_id, descriptor_type=descriptor_type
-                    ),
+                    yaml_config=_get_graph_yaml_for_resource(resource_id, descriptor_type=descriptor_type),
                     source="graph",
                 )
-            return JsonResponse(
-                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-            )
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
         data = json.loads(request.body) if request.body else {}
         config = data.get("config")
@@ -285,9 +254,7 @@ def get_display_descriptor(request, resource_id):
                 yaml_config = _serialize_config_to_yaml(config)
                 yaml_config_source = "request"
             else:
-                yaml_config = _get_graph_yaml_for_resource(
-                    resource_id, descriptor_type=descriptor_type
-                )
+                yaml_config = _get_graph_yaml_for_resource(resource_id, descriptor_type=descriptor_type)
                 yaml_config_source = "graph"
 
         service = DisplayDescriptorService()
@@ -333,9 +300,7 @@ def get_display_descriptor(request, resource_id):
                 yaml_config=yaml_config,
                 source=yaml_config_source,
             )
-            return JsonResponse(
-                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-            )
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
         payload = {
             "resource_id": resource_id,
@@ -348,9 +313,7 @@ def get_display_descriptor(request, resource_id):
             yaml_config=yaml_config,
             source=yaml_config_source,
         )
-        return JsonResponse(
-            _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-        )
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -415,14 +378,10 @@ def preview_display_descriptor(request):
 
         if descriptor_only:
             payload = {"display_descriptor": descriptor}
-            return JsonResponse(
-                _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-            )
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
         payload = {"input": resource, "display_descriptor": descriptor}
-        return JsonResponse(
-            _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-        )
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -470,11 +429,7 @@ def test_config_for_resource(request):
         if not yaml_config:
             from ..models import DisplayDescriptorGraphConfig
 
-            config_row = (
-                DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id)
-                .values("yaml_config")
-                .first()
-            )
+            config_row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).values("yaml_config").first()
 
             if not config_row:
                 return JsonResponse(
@@ -527,9 +482,7 @@ def test_config_for_resource(request):
         if not descriptor_only:
             payload["input"] = resource_data
 
-        return JsonResponse(
-            _add_sql_metadata(payload, include_sql, sql_queries, request_start)
-        )
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)

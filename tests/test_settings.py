@@ -71,6 +71,4 @@ SILENCED_SYSTEM_CHECKS.append(
     "arches.E001",  # Dummy cache is used intentionally in the test settings
 )
 
-ELASTICSEARCH_HOSTS = [
-    {"scheme": "http", "host": "localhost", "port": ELASTICSEARCH_HTTP_PORT}
-]
+ELASTICSEARCH_HOSTS = [{"scheme": "http", "host": "localhost", "port": ELASTICSEARCH_HTTP_PORT}]

@@ -49,19 +49,13 @@ class DisplayDescriptorGraphTests(ArchesTestCase):
         models.TileModel.objects.create(
             nodegroup_id=NAME_NODEGROUP_ID,
             resourceinstance=cls.resource_instance,
-            data={
-                str(NAME_NODE_ID): {
-                    "en": {"value": "  old chapel ", "direction": "ltr"}
-                }
-            },
+            data={str(NAME_NODE_ID): {"en": {"value": "  old chapel ", "direction": "ltr"}}},
             sortorder=0,
         )
         models.TileModel.objects.create(
             nodegroup_id=NAME_NODEGROUP_ID,
             resourceinstance=cls.resource_instance,
-            data={
-                str(NAME_NODE_ID): {"en": {"value": "new chapel", "direction": "ltr"}}
-            },
+            data={str(NAME_NODE_ID): {"en": {"value": "new chapel", "direction": "ltr"}}},
             sortorder=1,
         )
         DisplayDescriptorGraphConfig.objects.update_or_create(
@@ -107,11 +101,7 @@ class DisplayDescriptorGraphTests(ArchesTestCase):
         tile = models.TileModel.objects.create(
             nodegroup_id=NAME_NODEGROUP_ID,
             resourceinstance=self.resource_instance,
-            data={
-                str(NAME_NODE_ID): {
-                    "en": {"value": "unsorted chapel", "direction": "ltr"}
-                }
-            },
+            data={str(NAME_NODE_ID): {"en": {"value": "unsorted chapel", "direction": "ltr"}}},
             sortorder=2,
         )
         models.TileModel.objects.filter(pk=tile.pk).update(sortorder=None)

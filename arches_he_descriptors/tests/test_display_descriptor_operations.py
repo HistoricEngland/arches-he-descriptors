@@ -173,9 +173,7 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
     def test_replace_is_literal_and_honors_case_and_missing_parameters(self):
         cases = [
             (
-                Operation(
-                    type="replace", replace_from="heritage", replace_to="history"
-                ),
+                Operation(type="replace", replace_from="heritage", replace_to="history"),
                 "Heritage heritage",
                 "Heritage history",
             ),
@@ -202,9 +200,7 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
                 self.assertEqual(apply_operation_chain(value, [operation]), expected)
 
     def test_abbreviate_options_and_empty_values(self):
-        operation = Operation(
-            type="abbreviate", length_per_word=2, skip_words=["OF"], uppercase=False
-        )
+        operation = Operation(type="abbreviate", length_per_word=2, skip_words=["OF"], uppercase=False)
         self.assertEqual(
             apply_operation_chain(["church of england", "", "of"], [operation]),
             ["chen", "", ""],
@@ -231,9 +227,7 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
                 (3, None, "x", "  x" if operation_type == "lpad" else "x  "),
                 (3, "0", True, True),
             ):
-                with self.subTest(
-                    operation=operation_type, length=length, char=char, value=value
-                ):
+                with self.subTest(operation=operation_type, length=length, char=char, value=value):
                     self.assertEqual(
                         apply_operation_chain(
                             value,
@@ -272,14 +266,10 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
                 self.assertEqual(result, expected)
                 self.assertLessEqual(len(result), length)
         self.assertEqual(
-            apply_operation_chain(
-                ["abcdef", "xy"], [Operation(type="truncate", max_length=4)]
-            ),
+            apply_operation_chain(["abcdef", "xy"], [Operation(type="truncate", max_length=4)]),
             ["a...", "xy"],
         )
-        self.assertEqual(
-            apply_operation_chain("abcdef", [Operation(type="truncate")]), "abcdef"
-        )
+        self.assertEqual(apply_operation_chain("abcdef", [Operation(type="truncate")]), "abcdef")
 
     def test_combine_limits_defaults_and_scalar_passthrough(self):
         cases = [
@@ -293,9 +283,7 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
                 "a/...",
             ),
             (
-                Operation(
-                    type="combine", separator="/", max_length=2, overflow_indicator="!"
-                ),
+                Operation(type="combine", separator="/", max_length=2, overflow_indicator="!"),
                 ["a", "b"],
                 "a/!",
             ),
@@ -333,19 +321,12 @@ class DisplayDescriptorOperationTests(SimpleTestCase):
                 (["", "Known"], ["Unknown", "Known"]),
             ):
                 with self.subTest(operation=operation.type, value=value):
-                    self.assertEqual(
-                        apply_operation_chain(value, [operation]), expected
-                    )
+                    self.assertEqual(apply_operation_chain(value, [operation]), expected)
 
     def test_operations_accept_none_and_empty_operation_chain_is_identity(self):
         for operation in OperationType:
             with self.subTest(operation=operation.value):
-                expected = (
-                    ""
-                    if operation
-                    in (OperationType.COALESCE, OperationType.FALLBACK_TEXT)
-                    else None
-                )
+                expected = "" if operation in (OperationType.COALESCE, OperationType.FALLBACK_TEXT) else None
                 self.assertEqual(
                     apply_operation_chain(None, [Operation(type=operation.value)]),
                     expected,

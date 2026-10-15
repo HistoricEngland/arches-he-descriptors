@@ -12,8 +12,7 @@ class DisplayDescriptorGraphConfig(models.Model):
     def __str__(self):
         from arches.app.models.models import GraphModel
 
-        graph = GraphModel.objects.filter(
-            graphid=self.graph_id).only("name").first()
+        graph = GraphModel.objects.filter(graphid=self.graph_id).only("name").first()
         if graph and graph.name:
             return f"Display Descriptor Config for {graph.name}"
 

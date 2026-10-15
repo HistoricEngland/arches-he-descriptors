@@ -24,35 +24,19 @@ class BaseDescriptorTestCase(TestCase):
         project_root = Path(__file__).resolve().parents[2]
         fixtures_root = project_root / "tests" / "fixtures" / "pkg"
         cls.graph_source = (
-            project_root
-            / "arches_he_descriptors"
-            / "tests"
-            / "fixtures"
-            / "pkg"
-            / "graphs"
-            / "resource_models"
-            / "Monument.json"
+            project_root / "arches_he_descriptors" / "tests" / "fixtures" / "pkg" / "graphs" / "resource_models" / "Monument.json"
         )
 
-        descriptor_function_source = (
-            project_root
-            / "arches_he_descriptors"
-            / "functions"
-            / "arches_he_descriptors.py"
-        )
+        descriptor_function_source = project_root / "arches_he_descriptors" / "functions" / "arches_he_descriptors.py"
         with captured_stdout():
             call_command("fn", "register", source=str(descriptor_function_source))
-        cls.descriptor_function = models.Function.objects.get(
-            functionid=details["functionid"]
-        )
+        cls.descriptor_function = models.Function.objects.get(functionid=details["functionid"])
 
         ontology_source = fixtures_root / "ontologies" / "cidoc_crm"
         with captured_stdout():
             call_command("load_ontology", source=str(ontology_source), verbosity=0)
 
-        cls.concept_source = (
-            fixtures_root / "reference_data" / "st_bernards_concepts.json"
-        )
+        cls.concept_source = fixtures_root / "reference_data" / "st_bernards_concepts.json"
         call_command("loaddata", str(cls.concept_source), verbosity=0)
 
         widget_source = fixtures_root / "widgets" / "photo-widget.json"
@@ -65,7 +49,5 @@ class BaseDescriptorTestCase(TestCase):
             import_graph([cls.graph_definition], user=cls.admin)
 
         graph = Graph.objects.get(graphid=cls.monument_graph_id)
-        cls.descriptor_assignment = models.FunctionXGraph.objects.get(
-            graph=graph, function__functiontype="primarydescriptors"
-        )
+        cls.descriptor_assignment = models.FunctionXGraph.objects.get(graph=graph, function__functiontype="primarydescriptors")
         graph.publish(user=cls.admin)

@@ -42,15 +42,11 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
         block = DisplayDescriptorRuleBlock(rule=[rule], format="Name: {Name}")
 
         self.assertEqual(
-            DisplayDescriptorEngine(
-                DisplayDescriptorConfig(fields=[], display_descriptor_rules=[block])
-            ).render({}),
+            DisplayDescriptorEngine(DisplayDescriptorConfig(fields=[], display_descriptor_rules=[block])).render({}),
             "Name: Unrecorded (unknown)",
         )
         self.assertEqual(
-            DisplayDescriptorEngine(
-                DisplayDescriptorConfig(fields=[], display_descriptor_rules=[block])
-            ).render({"Name": "St Mary's"}),
+            DisplayDescriptorEngine(DisplayDescriptorConfig(fields=[], display_descriptor_rules=[block])).render({"Name": "St Mary's"}),
             "Name: St Mary's",
         )
 
@@ -98,18 +94,12 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
             fields=fields,
             display_descriptor_rules=[
                 DisplayDescriptorRuleBlock(
-                    rule=[
-                        RuleDefinition(
-                            name="Type", operations=[Operation(type="uppercase")]
-                        )
-                    ],
+                    rule=[RuleDefinition(name="Type", operations=[Operation(type="uppercase")])],
                     format="{Type}",
                 )
             ],
         )
-        result = DisplayDescriptorEngine(config).render(
-            {"Place": [{"value": "main chapel", "Use Type": "Primary"}]}
-        )
+        result = DisplayDescriptorEngine(config).render({"Place": [{"value": "main chapel", "Use Type": "Primary"}]})
         self.assertEqual(result, "PRIMARY")
 
     def test_missing_format_field_skips_block(self):
@@ -117,9 +107,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
             fields=[],
             display_descriptor_rules=[
                 DisplayDescriptorRuleBlock(rule=[], format="{Missing}"),
-                DisplayDescriptorRuleBlock(
-                    rule=[RuleDefinition(name="Name")], format="Name: {Name}"
-                ),
+                DisplayDescriptorRuleBlock(rule=[RuleDefinition(name="Name")], format="Name: {Name}"),
             ],
         )
         self.assertEqual(
@@ -130,9 +118,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
     def test_render_returns_none_when_no_rule_block_can_render(self):
         config = DisplayDescriptorConfig(
             fields=[],
-            display_descriptor_rules=[
-                DisplayDescriptorRuleBlock(rule=[], format="{Missing}")
-            ],
+            display_descriptor_rules=[DisplayDescriptorRuleBlock(rule=[], format="{Missing}")],
         )
         self.assertIsNone(DisplayDescriptorEngine(config).render({}))
 
@@ -144,11 +130,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                         fields=[],
                         display_descriptor_rules=[
                             DisplayDescriptorRuleBlock(
-                                rule=[
-                                    RuleDefinition(
-                                        name="Name", required=True, default=default
-                                    )
-                                ],
+                                rule=[RuleDefinition(name="Name", required=True, default=default)],
                                 format="Name: {Name}",
                             ),
                             DisplayDescriptorRuleBlock(rule=[], format="Catch-all"),
@@ -164,18 +146,14 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
             fields=[],
             display_descriptor_rules=[
                 DisplayDescriptorRuleBlock(
-                    rule=[
-                        RuleDefinition(name="Value", required=True, default="Unknown")
-                    ],
+                    rule=[RuleDefinition(name="Value", required=True, default="Unknown")],
                     format="{Value}",
                 )
             ],
         )
         for value, expected in ((0, "0"), (False, "False")):
             with self.subTest(value=value):
-                self.assertEqual(
-                    DisplayDescriptorEngine(config).render({"Value": value}), expected
-                )
+                self.assertEqual(DisplayDescriptorEngine(config).render({"Value": value}), expected)
 
     def test_blank_value_uses_explicit_empty_default_format(self):
         config = DisplayDescriptorConfig(
@@ -195,9 +173,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
         )
         for value in (None, "", " \t", []):
             with self.subTest(value=value):
-                self.assertEqual(
-                    DisplayDescriptorEngine(config).render({"Name": value}), "Site[]"
-                )
+                self.assertEqual(DisplayDescriptorEngine(config).render({"Name": value}), "Site[]")
 
     def test_subfield_agreement_and_ambiguity_control_formatting(self):
         fields = [
@@ -218,9 +194,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                             rule=[
                                 RuleDefinition(
                                     name="Place",
-                                    operations=[
-                                        Operation(type="combine", separator=" / ")
-                                    ],
+                                    operations=[Operation(type="combine", separator=" / ")],
                                 ),
                                 RuleDefinition(
                                     name="Type",
@@ -239,9 +213,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                         {"value": "two", "Use Type": second_type},
                     ]
                 }
-                self.assertEqual(
-                    DisplayDescriptorEngine(config).render(resource), expected
-                )
+                self.assertEqual(DisplayDescriptorEngine(config).render(resource), expected)
 
     def test_required_ambiguous_subfield_falls_through(self):
         config = DisplayDescriptorConfig(
@@ -254,9 +226,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
             display_descriptor_rules=[
                 DisplayDescriptorRuleBlock(
                     rule=[
-                        RuleDefinition(
-                            name="Place", operations=[Operation(type="combine")]
-                        ),
+                        RuleDefinition(name="Place", operations=[Operation(type="combine")]),
                         RuleDefinition(name="Type", required=True),
                     ],
                     format="{Place} ({Type})",
@@ -306,9 +276,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                                     name="Place",
                                     required=True,
                                     field_filters={"Type": [priority]},
-                                    operations=[
-                                        Operation(type="combine", separator=" / ")
-                                    ],
+                                    operations=[Operation(type="combine", separator=" / ")],
                                 )
                             ],
                             format="{Place}",
@@ -316,9 +284,7 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                         DisplayDescriptorRuleBlock(rule=[], format="Catch-all"),
                     ],
                 )
-                self.assertEqual(
-                    DisplayDescriptorEngine(config).render(resource), expected
-                )
+                self.assertEqual(DisplayDescriptorEngine(config).render(resource), expected)
 
     def test_multiple_subfield_filters_intersect_and_preserve_matching_context(self):
         fields = [
@@ -366,6 +332,4 @@ class DisplayDescriptorEngineTests(SimpleTestCase):
                         DisplayDescriptorRuleBlock(rule=[], format="Catch-all"),
                     ],
                 )
-                self.assertEqual(
-                    DisplayDescriptorEngine(config).render(resource), expected
-                )
+                self.assertEqual(DisplayDescriptorEngine(config).render(resource), expected)

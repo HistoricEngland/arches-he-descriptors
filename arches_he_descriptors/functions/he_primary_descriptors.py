@@ -62,8 +62,15 @@ class HEPrimaryDescriptors(AbstractPrimaryDescriptorsFunction):
                 where objects.key::text = nodeid::text"""
             try:
                 with connection.cursor() as cursor:
-                    cursor.execute(sql, ['System Reference Numbers', 'Primary Reference Number', str(
-                        resource.graph_id), str(resource.resourceinstanceid)])
+                    cursor.execute(
+                        sql,
+                        [
+                            "System Reference Numbers",
+                            "Primary Reference Number",
+                            str(resource.graph_id),
+                            str(resource.resourceinstanceid),
+                        ],
+                    )
                     row = cursor.fetchone()
                     if row and row[0] is not None:
                         primary_reference_number = str(row[0])
@@ -89,16 +96,13 @@ class HEPrimaryDescriptors(AbstractPrimaryDescriptorsFunction):
                         if str(node.nodeid) in data:
                             if not datatype_factory:
                                 datatype_factory = DataTypeFactory()
-                            datatype = datatype_factory.get_instance(
-                                node.datatype)
+                            datatype = datatype_factory.get_instance(node.datatype)
                             value = datatype.get_display_value(tile, node)
                             if value is None:
                                 value = ""
-                            config["string_template"] = config["string_template"].replace(
-                                "<%s>" % node.name, str(value))
+                            config["string_template"] = config["string_template"].replace("<%s>" % node.name, str(value))
         except ValueError:
-            logger.error(_("Invalid nodegroupid, {0}, participating in descriptor function.").format(
-                config["nodegroup_id"]))
+            logger.error(_("Invalid nodegroupid, {0}, participating in descriptor function.").format(config["nodegroup_id"]))
         if config["string_template"].strip() == "":
             config["string_template"] = _("Undefined")
         if primary_reference_number is not None:

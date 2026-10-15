@@ -67,18 +67,10 @@ class ArchesHEDescriptors(AbstractPrimaryDescriptorsFunction):
                 descriptor_type=descriptor_type,
             )
         except ValueError as exc:
-            logger.warning(
-                _("Unable to render display descriptor for resource {0}: {1}").format(
-                    resource.resourceinstanceid, exc
-                )
-            )
+            logger.warning(_("Unable to render display descriptor for resource {0}: {1}").format(resource.resourceinstanceid, exc))
             return _("Undefined")
         except Exception:
-            logger.exception(
-                _("Unexpected error rendering display descriptor for resource {0}").format(
-                    resource.resourceinstanceid
-                )
-            )
+            logger.exception(_("Unexpected error rendering display descriptor for resource {0}").format(resource.resourceinstanceid))
             return _("Undefined")
 
         if descriptor_value is None or str(descriptor_value).strip() == "":

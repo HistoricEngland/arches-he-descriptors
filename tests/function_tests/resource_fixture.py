@@ -33,9 +33,7 @@ def _node_objects(value):
             yield from _node_objects(child)
 
 
-def create_monument_resource(
-    source: Path, graph_definition: dict
-) -> MonumentFixtureResult:
+def create_monument_resource(source: Path, graph_definition: dict) -> MonumentFixtureResult:
     """Create names, descriptions and identifiers using preloaded concept values."""
     payload = json.loads(source.read_text(encoding="utf-8"))
     if len(payload) != 1:
@@ -64,11 +62,7 @@ def create_monument_resource(
         for sortorder, record in enumerate(records):
             collector = nodes[record["@node_id"]]
             group_id = collector["nodegroup_id"]
-            if (
-                not collector["is_collector"]
-                or collector["datatype"] != "semantic"
-                or groups[group_id]["parentnodegroup_id"] is not None
-            ):
+            if not collector["is_collector"] or collector["datatype"] != "semantic" or groups[group_id]["parentnodegroup_id"] is not None:
                 raise ValueError(f"Section {section!r} must use a root nodegroup")
             if section_group_id is not None and section_group_id != group_id:
                 raise ValueError(f"Section {section!r} spans multiple nodegroups")
@@ -81,13 +75,8 @@ def create_monument_resource(
             for node_object in _node_objects(record):
                 node_id = node_object["@node_id"]
                 node = nodes[node_id]
-                if (
-                    node_object["@tile_id"] != tile_id
-                    or node["nodegroup_id"] != group_id
-                ):
-                    raise ValueError(
-                        f"Node {node_id} does not belong to tile {tile_id}"
-                    )
+                if node_object["@tile_id"] != tile_id or node["nodegroup_id"] != group_id:
+                    raise ValueError(f"Node {node_id} does not belong to tile {tile_id}")
                 datatype = node["datatype"]
                 if datatype == "semantic":
                     continue
@@ -106,15 +95,10 @@ def create_monument_resource(
                             node_object["language_id"],
                             node_object["valuetype_id"],
                         )
-                        if (
-                            value in concept_values
-                            and concept_values[value] != metadata
-                        ):
+                        if value in concept_values and concept_values[value] != metadata:
                             raise ValueError(f"Conflicting concept metadata: {value}")
                         concept_values[value] = metadata
-                        concept_memberships.add(
-                            (node["config"]["rdmCollection"], metadata[0])
-                        )
+                        concept_memberships.add((node["config"]["rdmCollection"], metadata[0]))
                 else:
                     value = node_object["@display_value"]
                 if value is not None and datatype != "concept":
@@ -147,9 +131,7 @@ def create_monument_resource(
         }
         for value_id, metadata in concept_values.items():
             if stored_values.get(value_id) != metadata:
-                raise ValueError(
-                    f"Missing or mismatched fixture concept value: {value_id}"
-                )
+                raise ValueError(f"Missing or mismatched fixture concept value: {value_id}")
         memberships = {
             (str(parent), str(child))
             for parent, child in models.Relation.objects.filter(
@@ -178,7 +160,5 @@ def create_monument_resource(
     return MonumentFixtureResult(
         resource=resource,
         tiles=tiles,
-        skipped_sections=tuple(
-            section for section in resource_data if section not in SIMPLE_SECTIONS
-        ),
+        skipped_sections=tuple(section for section in resource_data if section not in SIMPLE_SECTIONS),
     )

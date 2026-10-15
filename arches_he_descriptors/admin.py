@@ -96,6 +96,7 @@ class DisplayDescriptorGraphConfigAdminForm(forms.ModelForm):
         raw = self.data.get("graph_id")
         if raw:
             from uuid import UUID
+
             try:
                 return UUID(str(raw))
             except (ValueError, AttributeError):
@@ -118,9 +119,7 @@ class DisplayDescriptorGraphConfigAdminForm(forms.ModelForm):
         except yaml.YAMLError as exc:
             raise forms.ValidationError(f"Invalid YAML in input: {str(exc)}")
         except Exception as exc:
-            raise forms.ValidationError(
-                f"Error processing input configuration: {str(exc)}"
-            )
+            raise forms.ValidationError(f"Error processing input configuration: {str(exc)}")
 
         try:
             yaml.safe_load(normalized)
@@ -139,9 +138,7 @@ class DisplayDescriptorGraphConfigAdminForm(forms.ModelForm):
                     "then remove the ** markers."
                 )
             else:
-                raise forms.ValidationError(
-                    f"Invalid YAML after normalization: {str(exc)}"
-                )
+                raise forms.ValidationError(f"Invalid YAML after normalization: {str(exc)}")
         except Exception as exc:
             if hasattr(self.data, "_mutable"):
                 self.data._mutable = True
@@ -210,9 +207,7 @@ class DisplayDescriptorGraphConfigAdminForm(forms.ModelForm):
 @admin.register(DisplayDescriptorGraphConfig)
 class DisplayDescriptorGraphConfigAdmin(admin.ModelAdmin):
     form = DisplayDescriptorGraphConfigAdminForm
-    change_form_template = (
-        "admin/arches_he_descriptors/displaydescriptorgraphconfig/change_form.html"
-    )
+    change_form_template = "admin/arches_he_descriptors/displaydescriptorgraphconfig/change_form.html"
     list_display = ("graph_id", "graph_name", "updated_at", "created_at")
     search_fields = ("graph_id",)
     readonly_fields = ("created_at", "updated_at")
@@ -229,12 +224,8 @@ class DisplayDescriptorGraphConfigAdmin(admin.ModelAdmin):
         from django.db.models import OuterRef, Subquery
 
         queryset = super().get_queryset(request)
-        graph_names = GraphModel.objects.filter(graphid=OuterRef("graph_id")).values(
-            "name"
-        )
-        queryset = queryset.annotate(
-            graph_name_annotated=Subquery(graph_names[:1])
-        ).order_by("graph_name_annotated")
+        graph_names = GraphModel.objects.filter(graphid=OuterRef("graph_id")).values("name")
+        queryset = queryset.annotate(graph_name_annotated=Subquery(graph_names[:1])).order_by("graph_name_annotated")
         return queryset
 
     @admin.display(description="Graph name", ordering="graph_name_annotated")
@@ -242,18 +233,11 @@ class DisplayDescriptorGraphConfigAdmin(admin.ModelAdmin):
         return obj.graph_name_annotated or "-"
 
     def get_search_results(self, request, queryset, search_term):
-        queryset, use_distinct = super().get_search_results(
-            request, queryset, search_term
-        )
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
         if not search_term:
             return queryset, use_distinct
 
-        graph_ids = GraphModel.objects.filter(name__icontains=search_term).values_list(
-            "graphid", flat=True
-        )
-        graph_config_queryset = self.get_queryset(request).filter(
-            graph_id__in=graph_ids
-        )
+        graph_ids = GraphModel.objects.filter(name__icontains=search_term).values_list("graphid", flat=True)
+        graph_config_queryset = self.get_queryset(request).filter(graph_id__in=graph_ids)
         queryset |= graph_config_queryset
         return queryset, use_distinct
-

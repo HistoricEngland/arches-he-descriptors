@@ -73,15 +73,9 @@ class DisplayDescriptorService:
                             sub_name = str(subfield.get("name", "") or "")
                             sub_alias = str(subfield.get("alias", "") or "")
                             if sub_name:
-                                normalized_subfields.append(
-                                    SubfieldDefinition(
-                                        name=sub_name, alias=sub_alias or None
-                                    )
-                                )
+                                normalized_subfields.append(SubfieldDefinition(name=sub_name, alias=sub_alias or None))
                         elif subfield is not None:
-                            normalized_subfields.append(
-                                SubfieldDefinition(name=str(subfield))
-                            )
+                            normalized_subfields.append(SubfieldDefinition(name=str(subfield)))
 
                 fields.append(
                     FieldDefinition(
@@ -114,9 +108,7 @@ class DisplayDescriptorService:
                     format_when_present=rule_data.get("format_when_present"),
                     format_when_default=rule_data.get("format_when_default"),
                     operations=operations,
-                    field_filters=_normalize_field_filters(
-                        rule_data.get("field_filters", {})
-                    ),
+                    field_filters=_normalize_field_filters(rule_data.get("field_filters", {})),
                 )
                 rules.append(rule)
 
@@ -139,22 +131,14 @@ class DisplayDescriptorService:
                 )
             )
 
-        return DisplayDescriptorConfig(
-            fields=fields, display_descriptor_rules=rule_blocks
-        )
+        return DisplayDescriptorConfig(fields=fields, display_descriptor_rules=rule_blocks)
 
-    def _load_graph_config(
-        self, graph_id, descriptor_type: Optional[str] = None
-    ) -> Optional[DisplayDescriptorConfig]:
+    def _load_graph_config(self, graph_id, descriptor_type: Optional[str] = None) -> Optional[DisplayDescriptorConfig]:
         """Load graph-scoped descriptor configuration from the database."""
         from ..models import DisplayDescriptorGraphConfig
         from .yaml_transform import extract_yaml_section, _load_json_sections
 
-        row = (
-            DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id)
-            .values("yaml_config")
-            .first()
-        )
+        row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).values("yaml_config").first()
         if not row:
             return None
 
@@ -175,22 +159,16 @@ class DisplayDescriptorService:
         try:
             return self.load_config_from_yaml(yaml_config)
         except ValueError as exc:
-            raise ValueError(
-                f"Invalid display descriptor config for graph {graph_id}: {exc}"
-            )
+            raise ValueError(f"Invalid display descriptor config for graph {graph_id}: {exc}")
 
-    def render_with_config(
-        self, resource: Dict[str, Any], config_data: Dict[str, Any]
-    ) -> Optional[str]:
+    def render_with_config(self, resource: Dict[str, Any], config_data: Dict[str, Any]) -> Optional[str]:
         """Render with an inline config (bypasses file caching)."""
         config = self._parse_config_data(config_data)
         self._config_cache = config
         engine = DisplayDescriptorEngine(config)
         return engine.render(resource)
 
-    def render_with_parsed_config(
-        self, resource: Dict[str, Any], config: DisplayDescriptorConfig
-    ) -> Optional[str]:
+    def render_with_parsed_config(self, resource: Dict[str, Any], config: DisplayDescriptorConfig) -> Optional[str]:
         """Render with a pre-parsed DisplayDescriptorConfig."""
         self._config_cache = config
         engine = DisplayDescriptorEngine(config)
@@ -229,9 +207,7 @@ class DisplayDescriptorService:
             return ({}, None) if return_config else {}
 
         self._config_cache = config
-        node_map = self._resolve_nodes_for_configured_fields(
-            resource_id, config=config, graph_id=graph_id
-        )
+        node_map = self._resolve_nodes_for_configured_fields(resource_id, config=config, graph_id=graph_id)
 
         grouped_fields: Dict[str, List[FieldDefinition]] = defaultdict(list)
         for field in config.fields:
@@ -296,9 +272,7 @@ class DisplayDescriptorService:
                             entry[subfield_name] = sub_val
 
                             if sub_meta["datatype"] in {"concept", "concept-list"}:
-                                self._collect_concept_ids(
-                                    sub_meta["datatype"], sub_val, concept_ids
-                                )
+                                self._collect_concept_ids(sub_meta["datatype"], sub_val, concept_ids)
                                 concept_placeholders.append(
                                     (
                                         entry,
@@ -309,9 +283,7 @@ class DisplayDescriptorService:
                                 )
 
                         if parent_meta["datatype"] in {"concept", "concept-list"}:
-                            self._collect_concept_ids(
-                                parent_meta["datatype"], entry.get("value"), concept_ids
-                            )
+                            self._collect_concept_ids(parent_meta["datatype"], entry.get("value"), concept_ids)
                             concept_placeholders.append(
                                 (
                                     entry,
@@ -327,9 +299,7 @@ class DisplayDescriptorService:
                             continue
 
                         if parent_meta["datatype"] in {"concept", "concept-list"}:
-                            self._collect_concept_ids(
-                                parent_meta["datatype"], parent_val, concept_ids
-                            )
+                            self._collect_concept_ids(parent_meta["datatype"], parent_val, concept_ids)
 
                         result.setdefault(field.name, []).append(parent_val)
 
@@ -344,9 +314,7 @@ class DisplayDescriptorService:
         for field_name, values in list(result.items()):
             parent_meta = node_map[field_name]
             if parent_meta["datatype"] == "concept":
-                result[field_name] = [
-                    concept_label_map.get(v) for v in values if v in concept_label_map
-                ]
+                result[field_name] = [concept_label_map.get(v) for v in values if v in concept_label_map]
             elif parent_meta["datatype"] == "concept-list":
                 resolved_values = []
                 for value in values:
@@ -370,9 +338,7 @@ class DisplayDescriptorService:
             parent_meta = node_map[field_name]
             if parent_meta["datatype"] == "concept-list":
                 continue
-            if isinstance(values, list) and all(
-                not isinstance(v, dict) for v in values
-            ):
+            if isinstance(values, list) and all(not isinstance(v, dict) for v in values):
                 if len(values) == 1:
                     result[field_name] = values[0]
 
@@ -419,17 +385,13 @@ class DisplayDescriptorService:
 
         requested_subfield_names = []
         for field in config.fields:
-            requested_subfield_names.extend(
-                subfield_def.name for subfield_def in field.subfields
-            )
+            requested_subfield_names.extend(subfield_def.name for subfield_def in field.subfields)
 
         requested_subfield_names = list(dict.fromkeys(requested_subfield_names))
 
         from arches.app.models.models import Node
 
-        nodes = Node.objects.filter(graph_id=graph_id).values(
-            "name", "nodeid", "datatype", "nodegroup_id"
-        )
+        nodes = Node.objects.filter(graph_id=graph_id).values("name", "nodeid", "datatype", "nodegroup_id")
 
         nodes_by_name: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         nodes_by_id: Dict[str, Dict[str, Any]] = {}
@@ -458,19 +420,13 @@ class DisplayDescriptorService:
                         f"{candidate['name']} not {parent_graph_name}"
                     )
                 else:
-                    raise ValueError(
-                        "Configured field nodeid is missing from graph "
-                        f"{graph_id}: {explicit_nodeid}"
-                    )
+                    raise ValueError("Configured field nodeid is missing from graph " f"{graph_id}: {explicit_nodeid}")
             else:
                 parent_candidates = nodes_by_name.get(parent_graph_name, [])
                 if len(parent_candidates) == 1:
                     resolved_parent = parent_candidates[0]
                 elif len(parent_candidates) == 0:
-                    raise ValueError(
-                        "Configured fields are missing from graph "
-                        f"{graph_id}: {parent_graph_name}"
-                    )
+                    raise ValueError("Configured fields are missing from graph " f"{graph_id}: {parent_graph_name}")
                 else:
                     raise ValueError(
                         "Configured field name is ambiguous in graph "
@@ -487,10 +443,7 @@ class DisplayDescriptorService:
             if len(subfield_candidates) == 1:
                 node_map[subfield_name] = subfield_candidates[0]
             elif len(subfield_candidates) == 0:
-                raise ValueError(
-                    "Configured fields are missing from graph "
-                    f"{graph_id}: {subfield_name}"
-                )
+                raise ValueError("Configured fields are missing from graph " f"{graph_id}: {subfield_name}")
             else:
                 raise ValueError(
                     "Configured subfield name is ambiguous in graph "
@@ -501,24 +454,16 @@ class DisplayDescriptorService:
         nodegroup_errors = []
         for field in config.fields:
             parent = node_map[field.name]
-            parent_nodegroup = (
-                str(parent["nodegroup_id"]) if parent["nodegroup_id"] else None
-            )
+            parent_nodegroup = str(parent["nodegroup_id"]) if parent["nodegroup_id"] else None
             for subfield_def in field.subfields:
                 subfield_name = subfield_def.name
                 child = node_map[subfield_name]
-                child_nodegroup = (
-                    str(child["nodegroup_id"]) if child["nodegroup_id"] else None
-                )
+                child_nodegroup = str(child["nodegroup_id"]) if child["nodegroup_id"] else None
                 if parent_nodegroup != child_nodegroup:
-                    nodegroup_errors.append(
-                        f"{field.name} -> {subfield_name} (parent={parent_nodegroup}, subfield={child_nodegroup})"
-                    )
+                    nodegroup_errors.append(f"{field.name} -> {subfield_name} (parent={parent_nodegroup}, subfield={child_nodegroup})")
 
         if nodegroup_errors:
-            raise ValueError(
-                "Subfield nodegroup validation failed: " + "; ".join(nodegroup_errors)
-            )
+            raise ValueError("Subfield nodegroup validation failed: " + "; ".join(nodegroup_errors))
 
         return node_map
 
@@ -526,11 +471,7 @@ class DisplayDescriptorService:
         """Get graph id for a resource instance."""
         from arches.app.models.models import ResourceInstance
 
-        resource = (
-            ResourceInstance.objects.filter(resourceinstanceid=resource_id)
-            .values("graph_id")
-            .first()
-        )
+        resource = ResourceInstance.objects.filter(resourceinstanceid=resource_id).values("graph_id").first()
         if not resource:
             raise ValueError(f"Resource instance not found: {resource_id}")
         return resource["graph_id"]
@@ -556,10 +497,7 @@ class DisplayDescriptorService:
                     return localized.get("value")
 
                 for localized_candidate in raw.values():
-                    if (
-                        isinstance(localized_candidate, dict)
-                        and "value" in localized_candidate
-                    ):
+                    if isinstance(localized_candidate, dict) and "value" in localized_candidate:
                         return localized_candidate.get("value")
             if isinstance(raw, str):
                 return raw
@@ -655,10 +593,7 @@ class DisplayDescriptorService:
             return concept_label_map.get(value, value)
 
         if datatype == "concept-list":
-            return [
-                concept_label_map.get(concept_value, concept_value)
-                for concept_value in self._normalize_concept_values(value)
-            ]
+            return [concept_label_map.get(concept_value, concept_value) for concept_value in self._normalize_concept_values(value)]
 
         return value
 
@@ -685,17 +620,11 @@ class DisplayDescriptorService:
 
         return descriptor or resource_id
 
-    def _get_stored_resource_descriptor(
-        self, resource_id: str, language: str, descriptor_type: str = "name"
-    ) -> Optional[str]:
+    def _get_stored_resource_descriptor(self, resource_id: str, language: str, descriptor_type: str = "name") -> Optional[str]:
         """Read the stored Arches descriptor from ResourceInstance.descriptors."""
         from arches.app.models.models import ResourceInstance
 
-        row = (
-            ResourceInstance.objects.filter(resourceinstanceid=resource_id)
-            .values("descriptors")
-            .first()
-        )
+        row = ResourceInstance.objects.filter(resourceinstanceid=resource_id).values("descriptors").first()
         if not row:
             return None
 
@@ -736,12 +665,7 @@ class DisplayDescriptorService:
 
         from arches.app.models.models import Value
 
-        return {
-            str(row["valueid"]): row["value"]
-            for row in Value.objects.filter(valueid__in=normalized_ids).values(
-                "valueid", "value"
-            )
-        }
+        return {str(row["valueid"]): row["value"] for row in Value.objects.filter(valueid__in=normalized_ids).values("valueid", "value")}
 
     def clear_cache(self):
         """Clear cached parsed config."""
@@ -764,10 +688,7 @@ def _validate_operation_type(op_type: str) -> None:
         OperationType(op_type)
     except ValueError:
         valid_types = [op.value for op in OperationType]
-        raise ValueError(
-            f"Invalid operation type: '{op_type}'. "
-            f"Valid types are: {', '.join(valid_types)}"
-        )
+        raise ValueError(f"Invalid operation type: '{op_type}'. " f"Valid types are: {', '.join(valid_types)}")
 
 
 def _normalize_field_filters(raw_filters: dict) -> dict:
