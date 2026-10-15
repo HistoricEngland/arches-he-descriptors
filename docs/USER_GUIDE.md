@@ -26,8 +26,9 @@ The list shows graph UUID/name and creation/update timestamps, and supports
 search by graph UUID or name. Timestamps are read-only.
 The function editor displays saved YAML read-only; edit it in Django admin.
 Testing does not save configuration, and saving does not regenerate stored
-resource descriptors. See the [README](../README.md#5-assign-and-configure-descriptors)
-for enabling rendering and applying changes to existing resources.
+resource descriptors. See the README for
+[enabling rendering](../README.md#8-assign-and-configure-descriptors) and
+[regenerating existing descriptors](../README.md#9-regenerate-existing-descriptors).
 
 ## Configuration reference
 
