@@ -1,0 +1,28 @@
+recursive-include arches_he_descriptors *
+include README.md
+include LICENSE
+exclude manage.py
+exclude arches_he_descriptors/settings_local.py
+exclude .*
+exclude *.yml
+recursive-exclude .eggs *
+recursive-exclude .github *
+recursive-exclude .idea *
+recursive-exclude .ac_arches_he_descriptors *
+recursive-exclude node_modules *
+recursive-exclude releases *
+recursive-exclude tests *
+recursive-exclude webpack *
+recursive-exclude arches_he_descriptors/tests *
+recursive-exclude arches_he_descriptors/logs *
+recursive-exclude arches_he_descriptors/staticfiles *
+recursive-exclude arches_he_descriptors/uploadedfiles *
+recursive-exclude arches_he_descriptors/media/build *
+global-exclude *.log
+global-exclude *.pyc
+global-exclude *.zip
+global-exclude *.DS_Store
+global-exclude *.orig
+global-exclude settings_local.py
+prune dist
+prune build

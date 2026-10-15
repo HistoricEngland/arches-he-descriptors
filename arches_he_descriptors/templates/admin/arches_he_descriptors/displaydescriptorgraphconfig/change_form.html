@@ -1,0 +1,437 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<style>
+  /* One Dark theme — inlined to avoid CDN ORB blocking */
+  .cm-s-one-dark.CodeMirror { background: #282c34; color: #abb2bf; }
+  .cm-s-one-dark .CodeMirror-gutters { background: #282c34; border-right: none; }
+  .cm-s-one-dark .CodeMirror-linenumber { color: #495162; }
+  .cm-s-one-dark .CodeMirror-cursor { border-left: 1px solid #528bff; }
+  .cm-s-one-dark div.CodeMirror-selected { background: #3e4451; }
+  .cm-s-one-dark.CodeMirror-focused div.CodeMirror-selected { background: #3e4451; }
+  .cm-s-one-dark .CodeMirror-activeline-background { background: #2c313c; }
+  .cm-s-one-dark .CodeMirror-matchingbracket { color: #fff; border-bottom: 1px solid; text-decoration: none; }
+  .cm-s-one-dark .cm-keyword    { color: #c678dd; }
+  .cm-s-one-dark .cm-atom,
+  .cm-s-one-dark .cm-number     { color: #d19a66; }
+  .cm-s-one-dark .cm-def        { color: #e06c75; }
+  .cm-s-one-dark .cm-variable,
+  .cm-s-one-dark .cm-property,
+  .cm-s-one-dark .cm-operator   { color: #abb2bf; }
+  .cm-s-one-dark .cm-string,
+  .cm-s-one-dark .cm-string-2   { color: #98c379; }
+  .cm-s-one-dark .cm-comment    { color: #5c6370; font-style: italic; }
+  .cm-s-one-dark .cm-variable-2,
+  .cm-s-one-dark .cm-variable-3,
+  .cm-s-one-dark .cm-tag        { color: #e06c75; }
+  .cm-s-one-dark .cm-attribute,
+  .cm-s-one-dark .cm-qualifier,
+  .cm-s-one-dark .cm-builtin    { color: #d19a66; }
+  .cm-s-one-dark .cm-header     { color: #c678dd; }
+  .cm-s-one-dark .cm-link       { color: #98c379; }
+  .cm-s-one-dark .cm-error,
+  .cm-s-one-dark .cm-invalidchar { color: #f44; }
+
+  /* Hide the raw section textareas — CodeMirror takes over */
+  textarea[name="yaml_config_display_name"],
+  textarea[name="yaml_config_display_description"],
+  textarea[name="yaml_config_map_popup"] {
+    display: none !important;
+  }
+
+  .CodeMirror {
+    height: 520px;
+    width: 100%;
+    font-family: 'Consolas', 'Monaco', 'Menlo', 'DejaVu Sans Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    border-radius: 4px;
+    border: 1px solid #444;
+  }
+  .CodeMirror-focused {
+    border-color: #528bff;
+  }
+
+  /* Descriptor-type tab nav */
+  .descriptor-tab-nav {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #ccc;
+    margin-bottom: 16px;
+  }
+  .descriptor-tab-btn {
+    padding: 8px 20px;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 13px;
+    margin-right: 4px;
+    border-radius: 4px 4px 0 0;
+    color: #333;
+  }
+  .descriptor-tab-btn:hover {
+    background: #e8e8e8;
+  }
+  .descriptor-tab-btn[aria-selected="true"] {
+    background: #fff;
+    border-color: #ccc;
+    border-bottom-color: #fff;
+    font-weight: bold;
+    color: #000;
+    margin-bottom: -2px;
+    padding-bottom: 10px;
+  }
+  .descriptor-tab-panel[hidden] {
+    display: none;
+  }
+</style>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+<script>
+  const DESCRIPTOR_SECTIONS = [
+    { key: 'display_name',        label: 'Display name',        fieldName: 'yaml_config_display_name' },
+    { key: 'display_description', label: 'Display description', fieldName: 'yaml_config_display_description' },
+    { key: 'map_popup',           label: 'Map popup',           fieldName: 'yaml_config_map_popup' },
+  ];
+
+  // editors[fieldName] → CodeMirror instance
+  const editors = {};
+  let activeDescriptorType = DESCRIPTOR_SECTIONS[0].key;
+
+  function initYamlEditors() {
+    // Locate the three field rows rendered by Django admin
+    const fieldRows = {};
+    DESCRIPTOR_SECTIONS.forEach(function(section) {
+      const row = document.querySelector('.field-' + section.fieldName);
+      if (row) fieldRows[section.key] = row;
+    });
+
+    if (!Object.keys(fieldRows).length) return;
+
+    // Build the tab nav and panels, wrapping the existing field rows
+    const firstRow = fieldRows[DESCRIPTOR_SECTIONS[0].key];
+    if (!firstRow) return;
+
+    const nav = document.createElement('div');
+    nav.className = 'descriptor-tab-nav';
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-label', 'Descriptor type configuration');
+
+    DESCRIPTOR_SECTIONS.forEach(function(section, index) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'descriptor-tab-btn';
+      btn.textContent = section.label;
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+      btn.setAttribute('aria-controls', 'tab-panel-' + section.key);
+      btn.setAttribute('id', 'tab-btn-' + section.key);
+      btn.dataset.key = section.key;
+      btn.addEventListener('click', function() { activateTab(section.key); });
+      nav.appendChild(btn);
+    });
+
+    // Insert nav before the first field row
+    firstRow.parentNode.insertBefore(nav, firstRow);
+
+    // Wrap each field row in a tab panel div and initialise CodeMirror
+    DESCRIPTOR_SECTIONS.forEach(function(section, index) {
+      const row = fieldRows[section.key];
+      if (!row) return;
+
+      const panel = document.createElement('div');
+      panel.className = 'descriptor-tab-panel';
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('id', 'tab-panel-' + section.key);
+      panel.setAttribute('aria-labelledby', 'tab-btn-' + section.key);
+      if (index !== 0) panel.hidden = true;
+
+      row.parentNode.insertBefore(panel, row);
+      panel.appendChild(row);
+
+      // Strip the Django-generated label (it's now represented by the tab)
+      const labelEl = row.querySelector('label');
+      if (labelEl) labelEl.style.display = 'none';
+
+      const textarea = row.querySelector('textarea[name="' + section.fieldName + '"]');
+      if (!textarea) return;
+
+      const editor = CodeMirror.fromTextArea(textarea, {
+        mode: 'yaml',
+        theme: 'one-dark',
+        lineNumbers: true,
+        lineWrapping: true,
+        tabSize: 2,
+        indentWithTabs: false,
+        extraKeys: { Tab: function(cm) { cm.replaceSelection('  '); } },
+      });
+      editor.setSize(null, 520);
+      editor.on('change', function() { editor.save(); });
+
+      editors[section.key] = editor;
+    });
+  }
+
+  function activateTab(key) {
+    activeDescriptorType = key;
+    DESCRIPTOR_SECTIONS.forEach(function(section) {
+      const btn = document.getElementById('tab-btn-' + section.key);
+      const panel = document.getElementById('tab-panel-' + section.key);
+      const isActive = section.key === key;
+      if (btn) btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (panel) panel.hidden = !isActive;
+      // Refresh CodeMirror layout when its panel becomes visible
+      if (isActive && editors[section.key]) {
+        editors[section.key].refresh();
+      }
+    });
+  }
+
+  function getActiveYamlConfig() {
+    const editor = editors[activeDescriptorType];
+    return editor ? editor.getValue().trim() : '';
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initYamlEditors);
+  } else {
+    initYamlEditors();
+  }
+</script>
+{% endblock %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+
+  <fieldset class="module aligned wide">
+    <h2>Test Display Descriptor</h2>
+    <p style="color: #666; font-size: 12px; margin-top: 0;">
+      Tests the YAML from the currently selected tab against the specified resource(s).
+    </p>
+    <div class="form-row">
+      <div>
+        <label for="test_resource_id">Resource UUID(s):</label>
+        <input type="text" id="test_resource_id" placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000, 123e4567-e89b-12d3-a456-426614174000" style="width: 50%;" />
+      </div>
+    </div>
+    <div class="form-row" style="margin-top: 8px;">
+      <button type="button" id="test_check_btn" class="button">Check</button>
+    </div>
+    <div class="form-row" style="margin-top: 12px;">
+      <div>
+        <label style="display: inline-flex; align-items: center; margin-right: 24px;">
+          <input type="checkbox" id="include_sql" style="margin-right: 8px;" />
+          Show SQL
+        </label>
+        <label style="display: inline-flex; align-items: center;">
+          <input type="checkbox" id="show_data" style="margin-right: 8px;" />
+          Show data
+        </label>
+      </div>
+    </div>
+    <div id="test_output" style="margin-top: 12px; padding: 12px; background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; display: none; white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;"></div>
+  </fieldset>
+
+  <script>
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        return parts.pop().split(';').shift();
+      }
+      return null;
+    }
+
+    function parseResourceIds(rawValue) {
+      return Array.from(new Set(
+        rawValue
+          .split(',')
+          .map(value => value.trim())
+          .filter(Boolean)
+      ));
+    }
+
+    function getResultColor(data, networkError) {
+      if (networkError || (data && data.error)) {
+        return '#d32f2f';
+      }
+
+      if (data && data.display_descriptor) {
+        return '#1b5e20';
+      }
+
+      return '#f57f17';
+    }
+
+    function formatJsonBlock(label, value) {
+      return `${label}:\n${JSON.stringify(value, null, 2)}`;
+    }
+
+    function formatResultBlock(resourceId, data, networkError) {
+      if (networkError) {
+        return [
+          `Resource ${resourceId}`,
+          `Status: Network error`,
+          `Message: ${networkError}`,
+        ].join('\n');
+      }
+
+      if (data && data.error) {
+        return [
+          `Resource ${resourceId}`,
+          `Status: Error`,
+          `Message: ${data.error}`,
+        ].join('\n');
+      }
+
+      if (data && data.display_descriptor) {
+        const lines = [
+          `Resource ${resourceId}`,
+          `Status: OK`,
+          `Descriptor: ${data.display_descriptor}`,
+        ];
+
+        if (Object.prototype.hasOwnProperty.call(data, 'input')) {
+          lines.push('', formatJsonBlock('Input data', data.input));
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'sql_query_count')) {
+          lines.push(
+            '',
+            `SQL queries: ${data.sql_query_count}`,
+            `Execution time (ms): ${data.execution_time_ms}`
+          );
+
+          if (Array.isArray(data.sql_queries) && data.sql_queries.length) {
+            lines.push('', formatJsonBlock('SQL details', data.sql_queries));
+          }
+        }
+
+        return lines.join('\n');
+      }
+
+      const lines = [
+        `Resource ${resourceId}`,
+        `Status: No descriptor`,
+        'Message: No display descriptor generated (may be expected if config is set to no-op)',
+      ];
+
+      if (data && Object.prototype.hasOwnProperty.call(data, 'input')) {
+        lines.push('', formatJsonBlock('Input data', data.input));
+      }
+
+      if (data && Object.prototype.hasOwnProperty.call(data, 'sql_query_count')) {
+        lines.push(
+          '',
+          `SQL queries: ${data.sql_query_count}`,
+          `Execution time (ms): ${data.execution_time_ms}`
+        );
+
+        if (Array.isArray(data.sql_queries) && data.sql_queries.length) {
+          lines.push('', formatJsonBlock('SQL details', data.sql_queries));
+        }
+      }
+
+      return lines.join('\n');
+    }
+
+    document.getElementById('test_check_btn').addEventListener('click', function() {
+      const resourceIdInput = document.getElementById('test_resource_id').value.trim();
+      const outputDiv = document.getElementById('test_output');
+
+      const resourceIds = parseResourceIds(resourceIdInput);
+      if (!resourceIds.length) {
+        outputDiv.textContent = 'Error: Please enter at least one Resource UUID';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      // Get graph_id from the form (ChoiceField renders as <select>)
+      const graphIdInput = document.querySelector('select[name="graph_id"]');
+      if (!graphIdInput) {
+        outputDiv.textContent = 'Error: graph_id select not found in form';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      const graphId = graphIdInput.value.trim();
+      if (!graphId) {
+        outputDiv.textContent = 'Error: Please select a graph';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      // Get YAML from the currently active descriptor tab
+      const yamlConfig = getActiveYamlConfig();
+      if (!yamlConfig) {
+        outputDiv.textContent = 'Error: YAML config is empty on the active tab (' + activeDescriptorType + ')';
+        outputDiv.style.display = 'block';
+        outputDiv.style.color = '#d32f2f';
+        return;
+      }
+
+      outputDiv.textContent = 'Testing...';
+      outputDiv.style.display = 'block';
+      outputDiv.style.color = '#333';
+
+      const requests = resourceIds.map(resourceId => {
+        return fetch('{% url "test_config_for_resource" %}', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken') || '',
+          },
+          body: JSON.stringify({
+            resource_id: resourceId,
+            graph_id: graphId,
+            yaml_config: yamlConfig,
+            include_sql: document.getElementById('include_sql').checked,
+            descriptor_only: !document.getElementById('show_data').checked,
+          }),
+        })
+          .then(response => response.json())
+          .then(data => ({ resourceId, data, networkError: null }))
+          .catch(error => ({ resourceId, data: null, networkError: error.message }));
+      });
+
+      Promise.all(requests)
+        .then(results => {
+          outputDiv.style.display = 'block';
+          outputDiv.style.color = '#333';
+          outputDiv.innerHTML = '';
+
+          results.forEach((result, index) => {
+            const block = document.createElement('div');
+            block.style.color = getResultColor(result.data, result.networkError);
+            block.style.marginBottom = index < results.length - 1 ? '12px' : '0';
+            block.textContent = formatResultBlock(result.resourceId, result.data, result.networkError);
+            outputDiv.appendChild(block);
+
+            if (index < results.length - 1) {
+              const separator = document.createElement('div');
+              separator.style.color = '#666';
+              separator.style.marginBottom = '12px';
+              separator.textContent = '----------------------------------------';
+              outputDiv.appendChild(separator);
+            }
+          });
+        })
+        .catch(error => {
+          outputDiv.style.display = 'block';
+          outputDiv.style.color = '#d32f2f';
+          outputDiv.textContent = 'Unexpected error: ' + error.message;
+        });
+    });
+  </script>
+{% endblock %}

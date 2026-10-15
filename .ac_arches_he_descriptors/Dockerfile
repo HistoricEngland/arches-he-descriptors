@@ -4,6 +4,7 @@ USER root
 ## Build Args
 ARG PROJ_NAME=project
 ARG ARCHES_PATH=./arches
+ARG APP_PATH=./arches_he_descriptors
 ARG DOCKER_PATH=./docker
 
 ## Setting default environment variables
