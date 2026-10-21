@@ -155,14 +155,15 @@ python manage.py fn register --source /path/to/arches_he_descriptors/arches_he_d
 python manage.py fn list
 ```
 
-Adjust the registration path to the checkout or installed package. For an installed package, locate the function file using the host project's
-Python environment:
+Adjust the registration path to the checkout or installed package. If you
+installed the package via pip, you can locate and register the function in one
+step using the host project's Python environment:
 
 ```bash
-python -c "import arches_he_descriptors; from pathlib import Path; print(Path(arches_he_descriptors.__file__).parent / 'functions' / 'arches_he_descriptors.py')"
+FUNCTION_SOURCE="$(python -c 'from pathlib import Path; import arches_he_descriptors; print(Path(arches_he_descriptors.__file__).resolve().parent / "functions" / "arches_he_descriptors.py")')" &&
+python manage.py fn register --source "$FUNCTION_SOURCE"
 ```
 
-Use the printed absolute path as the registration command's `--source` argument.
 In this repository's application container, the checkout path is:
 
 ```bash
