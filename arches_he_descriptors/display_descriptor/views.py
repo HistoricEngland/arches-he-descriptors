@@ -1,0 +1,503 @@
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.db import connection
+from django.conf import settings
+from ..models import DisplayDescriptorGraphConfig
+from ..display_descriptor.service import (
+    render_display_descriptor,
+    render_display_descriptor_for_resource,
+    DisplayDescriptorService,
+)
+from .yaml_transform import DESCRIPTOR_TYPES, extract_yaml_section, merge_yaml_section
+import json
+import yaml
+from time import perf_counter
+
+
+def get_display_descriptor_graph_config(request, graph_id):
+    """Return graph-scoped YAML descriptor configuration for the function editor.
+
+    Optional query param:
+    - descriptor_type=display_name|display_description|map_popup : return only that section
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    descriptor_type = request.GET.get("descriptor_type")
+    if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
+        return JsonResponse(
+            {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
+            status=400,
+        )
+
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).values("yaml_config").first()
+
+    yaml_config = row.get("yaml_config") if row else None
+
+    if descriptor_type and yaml_config:
+        yaml_config = extract_yaml_section(yaml_config, descriptor_type)
+
+    configured = isinstance(yaml_config, str) and yaml_config.strip() != ""
+
+    return JsonResponse(
+        {
+            "graph_id": str(graph_id),
+            "descriptor_type": descriptor_type,
+            "configured": configured,
+            "yaml_config": yaml_config if configured else None,
+        }
+    )
+
+
+@csrf_exempt
+def save_display_descriptor_section(request, graph_id):
+    """Save a single descriptor-type section of the graph YAML config.
+
+    Usage: PATCH /api/display-descriptor/config/<graph_id>/section/
+    Body: {"descriptor_type": "display_name|display_description|map_popup", "yaml_config": "..."}
+    """
+    if request.method != "PATCH":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    descriptor_type = data.get("descriptor_type", "").strip()
+    section_yaml = data.get("yaml_config", "").strip()
+
+    if not descriptor_type:
+        return JsonResponse({"error": "descriptor_type is required"}, status=400)
+    if descriptor_type not in DESCRIPTOR_TYPES:
+        return JsonResponse(
+            {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
+            status=400,
+        )
+    if not section_yaml:
+        return JsonResponse({"error": "yaml_config is required"}, status=400)
+
+    from .yaml_transform import normalize_config_yaml_for_graph
+
+    try:
+        normalized = normalize_config_yaml_for_graph(section_yaml, graph_id)
+        yaml.safe_load(normalized)
+        section_yaml = normalized
+    except (ValueError, yaml.YAMLError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).first()
+    full_yaml = row.yaml_config if row else None
+    new_full_yaml = merge_yaml_section(full_yaml, section_yaml, descriptor_type)
+
+    if row:
+        row.yaml_config = new_full_yaml
+        row.save(update_fields=["yaml_config", "updated_at"])
+    else:
+        DisplayDescriptorGraphConfig.objects.create(
+            graph_id=graph_id,
+            yaml_config=new_full_yaml,
+        )
+
+    return JsonResponse(
+        {
+            "graph_id": str(graph_id),
+            "descriptor_type": descriptor_type,
+            "saved": True,
+        }
+    )
+
+
+def _is_descriptor_only(value):
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _is_truthy(value):
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _execute_with_sql_capture(func, include_sql=False):
+    if not include_sql:
+        return func(), []
+
+    sql_queries = []
+
+    def _wrapper(execute, sql, params, many, context):
+        start = perf_counter()
+        try:
+            return execute(sql, params, many, context)
+        finally:
+            sql_queries.append(
+                {
+                    "sql": sql,
+                    "params": repr(params) if params is not None else None,
+                    "many": many,
+                    "duration_ms": round((perf_counter() - start) * 1000, 3),
+                }
+            )
+
+    with connection.execute_wrapper(_wrapper):
+        result = func()
+
+    return result, sql_queries
+
+
+def _validate_sql_toggle(include_sql):
+    if include_sql and not getattr(settings, "DEBUG", False):
+        raise ValueError("include_sql is only available when DEBUG=True")
+
+
+def _add_sql_metadata(payload, include_sql, sql_queries, request_start):
+    if include_sql:
+        payload["execution_time_ms"] = round((perf_counter() - request_start) * 1000, 3)
+        payload["sql_query_count"] = len(sql_queries)
+        payload["sql_queries"] = sql_queries
+    return payload
+
+
+def _add_yaml_metadata(payload, include_yaml, yaml_config, source=None):
+    if include_yaml:
+        payload["yaml_config"] = yaml_config
+        payload["yaml_config_source"] = source
+    return payload
+
+
+def _serialize_config_to_yaml(config_data):
+    if config_data is None:
+        return None
+    return yaml.safe_dump(config_data, sort_keys=False)
+
+
+def _get_graph_yaml_for_resource(resource_id, descriptor_type=None):
+    from arches.app.models.models import ResourceInstance
+
+    resource = ResourceInstance.objects.filter(resourceinstanceid=resource_id).values("graph_id").first()
+    if not resource:
+        raise ValueError(f"Resource instance not found: {resource_id}")
+
+    row = DisplayDescriptorGraphConfig.objects.filter(graph_id=resource["graph_id"]).values("yaml_config").first()
+    yaml_config = row.get("yaml_config") if row else None
+    if not isinstance(yaml_config, str) or not yaml_config.strip():
+        return None
+    if descriptor_type:
+        return extract_yaml_section(yaml_config, descriptor_type)
+    return yaml_config
+
+
+@csrf_exempt
+def get_display_descriptor(request, resource_id):
+    """
+    API endpoint to get display descriptor for a resource.
+
+    Usage: GET /api/display-descriptor/<resource_id>/
+    Usage: POST /api/display-descriptor/<resource_id>/
+    Body: {"config": {...}}  (config is optional)
+
+    Optional query params:
+    - descriptor_type=display_name|display_description|map_popup : which section to render
+    - descriptor_only=false|0|no|off : include input payload in response (POST only)
+    - include_sql=true|1|yes|on : include captured SQL statements and timings
+    - include_yaml=true|1|yes|on : include resolved YAML config string in response
+    - strict_sortorder=true|1|yes|on : fail if mixed null/non-null sortorder exists in a nodegroup
+    """
+    if request.method not in {"GET", "POST"}:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        request_start = perf_counter()
+        include_sql = _is_truthy(request.GET.get("include_sql"))
+        include_yaml = _is_truthy(request.GET.get("include_yaml"))
+        strict_sortorder = _is_truthy(request.GET.get("strict_sortorder"))
+        descriptor_type = request.GET.get("descriptor_type") or None
+        _validate_sql_toggle(include_sql)
+
+        if descriptor_type and descriptor_type not in DESCRIPTOR_TYPES:
+            return JsonResponse(
+                {"error": (f"Invalid descriptor_type '{descriptor_type}'. " f"Must be one of: {', '.join(DESCRIPTOR_TYPES)}")},
+                status=400,
+            )
+
+        if request.method == "GET":
+            descriptor, sql_queries = _execute_with_sql_capture(
+                lambda: render_display_descriptor_for_resource(
+                    resource_id,
+                    strict_sortorder=strict_sortorder,
+                    descriptor_type=descriptor_type,
+                ),
+                include_sql=include_sql,
+            )
+            payload = {"resource_id": resource_id, "display_descriptor": descriptor}
+            if include_yaml:
+                payload = _add_yaml_metadata(
+                    payload,
+                    include_yaml=True,
+                    yaml_config=_get_graph_yaml_for_resource(resource_id, descriptor_type=descriptor_type),
+                    source="graph",
+                )
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+        data = json.loads(request.body) if request.body else {}
+        config = data.get("config")
+        descriptor_only = _is_descriptor_only(request.GET.get("descriptor_only"))
+        yaml_config = None
+        yaml_config_source = None
+        if include_yaml:
+            if config is not None:
+                yaml_config = _serialize_config_to_yaml(config)
+                yaml_config_source = "request"
+            else:
+                yaml_config = _get_graph_yaml_for_resource(resource_id, descriptor_type=descriptor_type)
+                yaml_config_source = "graph"
+
+        service = DisplayDescriptorService()
+        resource_payload, sql_queries_data = _execute_with_sql_capture(
+            lambda: service.get_resource_data(
+                resource_id,
+                strict_sortorder=strict_sortorder,
+                config_data=config,
+                return_config=True,
+                descriptor_type=descriptor_type,
+            ),
+            include_sql=include_sql,
+        )
+
+        resource_data, resolved_config = resource_payload
+
+        render_func = (
+            (lambda: service.render_with_config(resource_data, config))
+            if config is not None
+            else (
+                (lambda: None)
+                if resolved_config is None
+                else (
+                    lambda: service.render_with_parsed_config(
+                        resource_data,
+                        resolved_config,
+                    )
+                )
+            )
+        )
+        descriptor, sql_queries_render = _execute_with_sql_capture(
+            render_func,
+            include_sql=include_sql,
+        )
+
+        sql_queries = sql_queries_data + sql_queries_render
+
+        if descriptor_only:
+            payload = {"display_descriptor": descriptor}
+            payload = _add_yaml_metadata(
+                payload,
+                include_yaml=include_yaml,
+                yaml_config=yaml_config,
+                source=yaml_config_source,
+            )
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+        payload = {
+            "resource_id": resource_id,
+            "input": resource_data,
+            "display_descriptor": descriptor,
+        }
+        payload = _add_yaml_metadata(
+            payload,
+            include_yaml=include_yaml,
+            yaml_config=yaml_config,
+            source=yaml_config_source,
+        )
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def preview_display_descriptor(request):
+    """
+    API endpoint to preview display descriptor for test data.
+
+    Usage: POST /api/display-descriptor/preview/
+    Body: {"resource": {...}, "config": {...}}  (config is optional)
+
+    If config is provided, it will be used for rendering instead of the default config.
+    Config can be a dict with keys: "fields" and "display_descriptor_rules"
+
+    Optional query param:
+    - descriptor_only=false|0|no|off : returns {"input": {...}, "display_descriptor": "..."}
+    - default behavior (or descriptor_only=true) returns only {"display_descriptor": "..."}
+    - include_sql=true|1|yes|on : include captured SQL statements and timings
+    - strict_sortorder=true|1|yes|on : accepted for API consistency (no effect in preview mode)
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        request_start = perf_counter()
+        data = json.loads(request.body)
+        resource = data.get("resource", {})
+        config = data.get("config")
+        descriptor_only = _is_descriptor_only(request.GET.get("descriptor_only"))
+        include_sql = _is_truthy(request.GET.get("include_sql"))
+        strict_sortorder = _is_truthy(request.GET.get("strict_sortorder"))
+        _validate_sql_toggle(include_sql)
+
+        if strict_sortorder:
+            # Preview mode renders in-memory resource payloads and does not load tiles.
+            # The parameter is accepted for consistency with DB-backed endpoints.
+            pass
+
+        # Use provided config when present; otherwise no-op (no default file fallback).
+        if config is not None:
+            try:
+                service = DisplayDescriptorService()
+                descriptor, sql_queries = _execute_with_sql_capture(
+                    lambda: service.render_with_config(resource, config),
+                    include_sql=include_sql,
+                )
+            except ValueError as e:
+                return JsonResponse({"error": f"Invalid config: {str(e)}"}, status=400)
+        else:
+            descriptor, sql_queries = _execute_with_sql_capture(
+                lambda: render_display_descriptor(resource),
+                include_sql=include_sql,
+            )
+
+        if descriptor_only:
+            payload = {"display_descriptor": descriptor}
+            return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+        payload = {"input": resource, "display_descriptor": descriptor}
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def test_config_for_resource(request):
+    """
+    Admin test endpoint to render display descriptor.
+
+    Usage: POST /api/display-descriptor/admin-test/
+    Body: {
+      "resource_id": "<uuid>",
+      "graph_id": "<uuid>",
+      "yaml_config": "...",
+      "descriptor_only": true|false,
+      "include_sql": true|false
+    }
+
+    Returns descriptor-only payload by default, or includes input data when
+    descriptor_only=false. SQL metadata is included when include_sql=true.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        request_start = perf_counter()
+        data = json.loads(request.body) if request.body else {}
+        resource_id = data.get("resource_id")
+        graph_id = data.get("graph_id")
+        yaml_config = data.get("yaml_config")
+        descriptor_only = _is_descriptor_only(data.get("descriptor_only"))
+        include_sql = _is_truthy(data.get("include_sql"))
+
+        _validate_sql_toggle(include_sql)
+
+        if not resource_id:
+            return JsonResponse({"error": "resource_id is required"}, status=400)
+        if not graph_id:
+            return JsonResponse({"error": "graph_id is required"}, status=400)
+
+        # If yaml_config not provided in request, try to fetch from database
+        if not yaml_config:
+            from ..models import DisplayDescriptorGraphConfig
+
+            config_row = DisplayDescriptorGraphConfig.objects.filter(graph_id=graph_id).values("yaml_config").first()
+
+            if not config_row:
+                return JsonResponse(
+                    {
+                        "display_descriptor": None,
+                        "error": f"No display descriptor config found for graph {graph_id}",
+                    }
+                )
+
+            yaml_config = config_row.get("yaml_config")
+
+        if not yaml_config:
+            return JsonResponse(
+                {
+                    "display_descriptor": None,
+                    "error": "YAML config is empty",
+                }
+            )
+
+        try:
+            config_dict = yaml.safe_load(yaml_config)
+        except yaml.YAMLError as e:
+            return JsonResponse(
+                {
+                    "display_descriptor": None,
+                    "error": f"Invalid YAML in config: {str(e)}",
+                }
+            )
+
+        service = DisplayDescriptorService()
+
+        resource_data, sql_queries_data = _execute_with_sql_capture(
+            lambda: service.get_resource_data(
+                resource_id=resource_id,
+                config_data=config_dict,
+            ),
+            include_sql=include_sql,
+        )
+        descriptor, sql_queries_render = _execute_with_sql_capture(
+            lambda: service.render_with_config(resource_data, config_dict),
+            include_sql=include_sql,
+        )
+        sql_queries = sql_queries_data + sql_queries_render
+
+        payload = {
+            "display_descriptor": descriptor,
+            "error": None,
+        }
+
+        if not descriptor_only:
+            payload["input"] = resource_data
+
+        return JsonResponse(_add_sql_metadata(payload, include_sql, sql_queries, request_start))
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except ValueError as e:
+        return JsonResponse(
+            {
+                "display_descriptor": None,
+                "error": str(e),
+            }
+        )
+    except Exception as e:
+        return JsonResponse(
+            {
+                "display_descriptor": None,
+                "error": str(e),
+            },
+            status=500,
+        )

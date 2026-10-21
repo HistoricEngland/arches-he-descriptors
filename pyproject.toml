@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arches-he-descriptors"
+description = "A package for descriptors in Arches"
+readme = "README.md"
+authors = []
+maintainers = [{name = "Historic England", email = "donotreply@historicengland.org.uk"}]
+keywords = ["arches", "extension", "django", "heritage", "historic-data"]
+license = {text = "GNU AGPL3"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "arches>=7.6.17,<7.7.0",
+    "PyYAML>=6.0",
+]
+version = "1.0.0rc1"
+
+[project.urls]
+Homepage = "https://github.com/HistoricEngland/arches-he-descriptors"
+Repository = "https://github.com/HistoricEngland/arches-he-descriptors.git"
+Issues = "https://github.com/HistoricEngland/arches-he-descriptors/issues"
+Changelog = "https://github.com/HistoricEngland/arches-he-descriptors/releases"
+
+[project.optional-dependencies]
+dev = [
+    "livereload",
+    "sst",
+    "coverage",
+    "django-silk==5.1.0",
+    "pre-commit==3.8.0",
+    "black==24.4.2",
+]
+
+[tool.setuptools.packages.find]
+include = ["arches_he_descriptors*"]
+exclude = ["arches_he_descriptors.logs*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.black]
+line-length = 140
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '^/arches_he_descriptors/settings_local\.py$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | node_modules
+)/
+'''
